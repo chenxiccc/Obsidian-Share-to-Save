@@ -244,6 +244,23 @@ export class Downloader {
 	}
 
 	/**
+	 * 标准化图片 URL 用于去重（去除查询参数，统一子域名）
+	 * Normalize image URL for dedup (strip query params, normalize subdomain)
+	 *
+	 * 参考 ima-copilot-sync html-to-md.ts normalizeImgUrl
+	 * Based on ima-copilot-sync's html-to-md.ts normalizeImgUrl
+	 */
+	private normalizeImgUrl(url: string): string {
+		try {
+			const u = new URL(url);
+			return u.origin + u.pathname;
+		} catch {
+			const idx = url.indexOf('?');
+			return idx >= 0 ? url.substring(0, idx) : url;
+		}
+	}
+
+	/**
 	 * 补充提取 HTML 中 defuddle 遗漏的图片（用于 data-src 懒加载、cdn_url 等模式）
 	 * Supplementary image extraction for images defuddle missed (data-src, cdn_url, etc.)
 	 *
@@ -251,13 +268,17 @@ export class Downloader {
 	 */
 	private extractSupplementaryImages(html: string, doc: Document, existingContent: string): string {
 		const seen = new Set<string>();
+		const seenNormalized = new Set<string>();
 		const parts: string[] = [];
 
 		// 先收集已有 Markdown 中的图片 URL 用于去重 / Collect existing Markdown image URLs for dedup
 		const mdImgRegex = /!\[.*\]\((https?:\/\/[^)]+)\)/g;
 		let mdMatch: RegExpExecArray | null;
 		while ((mdMatch = mdImgRegex.exec(existingContent)) !== null) {
-			if (mdMatch[1]) seen.add(mdMatch[1]);
+			if (mdMatch[1]) {
+				seen.add(mdMatch[1]);
+				seenNormalized.add(this.normalizeImgUrl(mdMatch[1]));
+			}
 		}
 
 		// 全 DOM 搜索 img，优先 data-src（懒加载），回退 src
@@ -269,8 +290,10 @@ export class Downloader {
 			if (imgUrl.includes('pic_blank.gif')) continue;
 			if (imgUrl.includes('res.wx.qq.com/mmbizappmsg')) continue;
 			if (!imgUrl.includes('from=appmsg')) continue;
-			if (seen.has(imgUrl)) continue;
+			const normalized = this.normalizeImgUrl(imgUrl);
+			if (seen.has(imgUrl) || seenNormalized.has(normalized)) continue;
 			seen.add(imgUrl);
+			seenNormalized.add(normalized);
 			parts.push(`![${(img as HTMLImageElement).alt || ''}](${imgUrl})`);
 		}
 
@@ -280,8 +303,10 @@ export class Downloader {
 		let cdnMatch: RegExpExecArray | null;
 		while ((cdnMatch = cdnRegex.exec(html)) !== null) {
 			const imgUrl = cdnMatch[1] as string;
-			if (seen.has(imgUrl)) continue;
+			const normalized = this.normalizeImgUrl(imgUrl);
+			if (seen.has(imgUrl) || seenNormalized.has(normalized)) continue;
 			seen.add(imgUrl);
+			seenNormalized.add(normalized);
 			parts.push(`![](${imgUrl})`);
 		}
 
