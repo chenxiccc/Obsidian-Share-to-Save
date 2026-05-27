@@ -72,13 +72,31 @@ class WeChatConverter implements ContentConverter {
 		return null;
 	}
 
-	/** 克隆容器、data-src→src、构建最小 HTML */
+	/** 克隆容器、data-src→src、移除微信 UI → 构建最小 HTML */
 	private buildCleanHtml(el: HTMLElement): string {
 		const clone = el.cloneNode(true) as HTMLElement;
 		clone.querySelectorAll('img').forEach(img => {
 			const ds = img.getAttribute('data-src');
 			if (ds && !img.src) img.setAttribute('src', ds);
 		});
+
+		// 移除微信 UI 元素（赞赏弹窗、底部导航等）
+		// Remove WeChat UI elements (donation dialog, bottom nav, etc.)
+		const uiSelectors = [
+			'.reward_area', '.reward_qrcode', '.reward_setting',
+			'.profile_area', '.profile_inner',
+			'.rich_media_area_extra', '.rich_media_meta_list',
+			'.reward_area-normal', '.reward_user',
+			'#js_pc_qr_code', '.qr_code_pc_outer',
+			'[class*="reward"]', '[class*="赞赏"]',
+			'#js_reward_area', '#js_bottom_ad',
+			'.original_panel', '.global_vip_guide',
+			'mp-common-profile', 'mp-common-mpaudio',
+		];
+		uiSelectors.forEach(sel => {
+			try { clone.querySelectorAll(sel).forEach(n => n.remove()); } catch { /* skip */ }
+		});
+
 		return `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>${clone.innerHTML}</body></html>`;
 	}
 
