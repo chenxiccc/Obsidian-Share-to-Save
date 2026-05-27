@@ -43,11 +43,50 @@ class WeChatConverter implements ContentConverter {
 			}
 		});
 
-		// 3. 构建最小化 HTML / Build minimal HTML
+		// 3. Turndown 转换 / Convert with Turndown
 		const miniHtml = `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>${clone.innerHTML}</body></html>`;
+		let markdown = this.getTurndown().turndown(miniHtml);
 
-		// 4. Turndown 转换 / Convert with Turndown
-		return this.getTurndown().turndown(miniHtml);
+		// 4. 补充全页图片：部分微信模板图片在 #js_content 之外
+		// Supplement full-page images: some WeChat templates put images outside #js_content
+		const supplement = this.supplementImages(doc, markdown);
+		if (supplement) {
+			markdown = markdown.trimEnd() + '\n' + supplement;
+		}
+
+		return markdown;
+	}
+
+	/**
+	 * 全页扫描 WeChat 正文图片，补充 Turndown 遗漏的
+	 * Scan full page for WeChat content images missed by Turndown
+	 *
+	 * 参考 ima-copilot-sync extractWeChatImages
+	 * Based on ima-copilot-sync's extractWeChatImages
+	 */
+	private supplementImages(doc: Document, existingMarkdown: string): string {
+		const seen = new Set<string>();
+		const parts: string[] = [];
+
+		// 先收集已有 Markdown 中的图片用于去重
+		const mdImgRegex = /!\[.*\]\((https?:\/\/[^)]+)\)/g;
+		let mdMatch: RegExpExecArray | null;
+		while ((mdMatch = mdImgRegex.exec(existingMarkdown)) !== null) {
+			if (mdMatch[1]) seen.add(mdMatch[1]);
+		}
+
+		// 扫描全页 img，优先 data-src；from=appmsg 过滤推荐缩略图
+		for (const img of Array.from(doc.querySelectorAll('img'))) {
+			const rawUrl = img.getAttribute('data-src') || img.src;
+			if (!rawUrl || !/^https?:\/\//.test(rawUrl)) continue;
+			if (rawUrl.includes('pic_blank.gif')) continue;
+			if (rawUrl.includes('res.wx.qq.com/mmbizappmsg')) continue;
+			if (seen.has(rawUrl)) continue;
+			seen.add(rawUrl);
+			parts.push(`![${(img as HTMLImageElement).alt || ''}](${rawUrl})`);
+		}
+
+		return parts.length > 0 ? parts.join('\n') + '\n' : '';
 	}
 
 	private turndownInstance: TurndownService | null = null;
