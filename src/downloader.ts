@@ -5,7 +5,7 @@
  * 仅在桌面端运行（依赖 Node.js https/http）/ Desktop only (depends on Node.js https/http)
  */
 
-import { Vault, normalizePath } from 'obsidian';
+import { Vault, normalizePath, requestUrl } from 'obsidian';
 import type { ParsedContent, ProcessResult, ShareToSaveSettings } from './types';
 import { ImageHandler } from './image-handler';
 import Defuddle from 'defuddle/full';
@@ -108,26 +108,56 @@ export class Downloader {
 	}
 
 	/**
-	 * 通过 Node.js https/http.get 获取网页 HTML（支持 HTTP→HTTPS 重定向）
-	 * Fetch webpage HTML via Node.js https/http.get (supports HTTP→HTTPS redirects)
+	 * 获取网页 HTML：首选 requestUrl（Electron Chromium 网络栈），
+	 * 失败时回退 Node.js https.get（带 Chrome UA）
+	 *
+	 * Fetch webpage HTML: prefer requestUrl (Electron Chromium stack),
+	 * fallback to Node.js https.get (with Chrome UA)
+	 *
+	 * 参考 ima-copilot-sync sync-manager.ts syncWebContent
+	 * Based on ima-copilot-sync's sync-manager.ts syncWebContent
 	 */
 	private async fetchHtml(url: string): Promise<string> {
+		// Tier 1: requestUrl（Chromium 网络栈，真实浏览器 TLS 指纹）
+		// Tier 1: requestUrl (Chromium network stack, real browser TLS fingerprint)
+		try {
+			const response = await requestUrl({
+				url,
+				method: 'GET',
+				headers: {
+					'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+					'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+				},
+				throw: false,
+			});
+
+			if (response.status < 400) {
+				return response.text;
+			}
+			throw new Error(`HTTP ${response.status}`);
+		} catch (requestUrlErr) {
+			// Tier 2: Node.js https.get 兜底（可设置自定义 UA）
+			// Tier 2: Node.js https.get fallback (can set custom UA)
+			const msg = requestUrlErr instanceof Error ? requestUrlErr.message : String(requestUrlErr);
+			// eslint-disable-next-line no-console
+			console.debug(`Share to Save: requestUrl 失败，尝试 Node.js 兜底 / requestUrl failed, trying Node.js fallback: ${msg}`);
+		}
+
 		// eslint-disable-next-line @typescript-eslint/no-require-imports
 		const zlib: typeof import('zlib') = require('zlib');
-
 		const parsedUrl = new URL(url);
 		const protocol = parsedUrl.protocol === 'http:' ? 'http' : 'https';
 		// eslint-disable-next-line @typescript-eslint/no-require-imports
 		const mod = require(protocol) as typeof import('https');
 
 		const html = await new Promise<string>((resolve, reject) => {
-			const doRequest = (requestUrl: string, redirectCount = 0): void => {
+			const doRequest = (reqUrl: string, redirectCount = 0): void => {
 				if (redirectCount > 10) {
 					reject(new Error('重定向次数过多 / Too many redirects'));
 					return;
 				}
 
-				const req = mod.get(requestUrl, {
+				const req = mod.get(reqUrl, {
 					headers: {
 						'User-Agent': CHROME_UA,
 						'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
@@ -207,19 +237,29 @@ export class Downloader {
 	 * so defuddle can "see" lazy-loaded images (WeChat puts real URLs in data-src)
 	 */
 	private parseWithDefuddle(html: string, url: string): ParsedContent {
-		const parser = new DOMParser();
-		const doc = parser.parseFromString(html, 'text/html');
+		// 将 data-src 替换为 src，使 defuddle 能提取懒加载图片
+		// WeChat 图片用 data-src 存真实 URL，src 为空或占位图
+		// 直接在 HTML 字符串上替换，确保 DOMParser 解析后 img.src 就是真实 URL
+		// Replace data-src with src so defuddle can extract lazy-loaded images
+		// WeChat images store real URLs in data-src; src is empty or placeholder
+		// Replace in raw HTML string to guarantee img.src resolves correctly after DOMParser
+		const fixedHtml = html.replace(
+			/<img\b[^>]*?\bdata-src=(["'])(https?:\/\/[^"']+)\1[^>]*?\/?>/gi,
+			(match: string) => {
+				// 提取 data-src URL，放入 src / Extract data-src URL, put into src
+				const dsMatch = match.match(/\bdata-src=(["'])(https?:\/\/[^"']+)\1/i);
+				if (!dsMatch || !dsMatch[2]) return match;
+				const url = dsMatch[2];
+				// 替换原 src（如 src=""）为真实 URL / Replace original src (e.g. src="") with real URL
+				return match.replace(/\bsrc=(["'])[^"']*\1/i, `src="${url}"`).replace(
+					/\bdata-src=(["'])https?:\/\/[^"']+\1/i,
+					`data-src="${url}"`,
+				);
+			},
+		);
 
-		// 将 data-src 复制到 src，使 defuddle 能提取懒加载图片
-		// Copy data-src to src so defuddle can extract lazy-loaded images
-		// 不判断 img.src 是否为空——浏览器可能将 src="" 解析为非空 base URI
-		// Don't check img.src — browser may resolve empty src="" to a non-empty base URI
-		doc.querySelectorAll('img').forEach(img => {
-			const dataSrc = img.getAttribute('data-src');
-			if (dataSrc) {
-				img.setAttribute('src', dataSrc);
-			}
-		});
+		const parser = new DOMParser();
+		const doc = parser.parseFromString(fixedHtml, 'text/html');
 
 		const defuddleOpts: DefuddleOptions = {
 			url,
