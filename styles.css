@@ -1,0 +1,38 @@
+/**
+ * Share to Save 插件样式
+ * Share to Save plugin styles
+ */
+
+/* ── URL 输入模态框 / URL input modal ── */
+
+.sts-url-input-modal textarea.sts-url-textarea {
+	width: 100%;
+	min-height: 80px;
+	font-family: var(--font-monospace);
+	font-size: 0.9em;
+	padding: 8px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 4px;
+	background: var(--background-primary);
+	color: var(--text-normal);
+	resize: vertical;
+}
+
+.sts-url-input-modal .sts-button-row {
+	display: flex;
+	justify-content: flex-end;
+	gap: 8px;
+	margin-top: 12px;
+}
+
+.sts-url-input-modal .sts-button-row .setting-item {
+	border-top: none;
+	padding: 0;
+}
+
+/* ── 分享菜单注入按钮（移动端）/ Share menu injected button (mobile) ── */
+
+.share-to-save-action {
+	/* 复用 Obsidian 原生 .menu-item 样式，无需额外样式 */
+	/* Reuses Obsidian native .menu-item styles, no additional styles needed */
+}
