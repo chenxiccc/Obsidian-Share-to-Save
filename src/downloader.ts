@@ -74,7 +74,12 @@ export class Downloader {
 		// Large HTML (>500KB JS) but short content (<2000 chars) → JS-rendered shell
 		const looksLikeJsPage = html.length > LOOKS_LIKE_JS_HTML_SIZE && contentLen < LOOKS_LIKE_JS_MAX_CONTENT;
 
-		if (contentTooShort || hasOrphanImages || looksLikeJsPage) {
+		// 微信页面：静态 HTML 不含任何已知内容容器 → 反爬/验证页面，需 headless
+		// WeChat page: static HTML lacks any known content container → anti-crawl/verify page, need headless
+		const isWeChatPage = /mp\.weixin\.qq\.com/.test(url);
+		const noWeChatContent = isWeChatPage && !HeadlessExtractor.hasWeChatContent(html);
+
+		if (contentTooShort || hasOrphanImages || looksLikeJsPage || noWeChatContent) {
 			const renderedHtml = await this.headlessExtractor.extractRenderedHtml(cleanUrl);
 			if (renderedHtml && HeadlessExtractor.hasWeChatContent(renderedHtml)) {
 				const reParsed = this.parseWithDefuddle(renderedHtml, cleanUrl);
