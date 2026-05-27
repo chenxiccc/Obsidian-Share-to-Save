@@ -9,52 +9,85 @@ import { Vault, normalizePath } from 'obsidian';
 import type { ParsedContent, ProcessResult, ShareToSaveSettings } from './types';
 import { ImageHandler } from './image-handler';
 import { Defuddle } from 'defuddle/node';
+import { HeadlessExtractor } from './headless-extractor';
 
 /** Chrome UA for Node.js https */
 const CHROME_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 15_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.7258.108 Safari/537.36';
 
+/** 静态 HTML 内容判定为"过短"的阈值（字符数）/ Threshold for "too short" static HTML content (characters) */
+const MIN_CONTENT_LENGTH = 120;
+/** 最低图片数量阈值：静态 HTML 中图片少于阈值时尝试 headless / Min image count threshold: try headless when fewer than this */
+const MIN_IMAGE_COUNT = 2;
+
 export class Downloader {
 	private readonly imageHandler: ImageHandler;
+	private readonly headlessExtractor: HeadlessExtractor;
 
 	constructor(
 		private vault: Vault,
 		private settings: ShareToSaveSettings,
 	) {
 		this.imageHandler = new ImageHandler(vault, settings.outputFolder);
+		this.headlessExtractor = new HeadlessExtractor();
 	}
 
 	/**
 	 * 处理单个 URL：下载 HTML → defuddle 解析 → 下载图片 → 保存 .md
 	 * Process a single URL: download HTML → defuddle parse → download images → save .md
 	 *
+	 * 回退策略 / Fallback strategy:
+	 *   Tier 1: Node.js https.get 获取静态 HTML → defuddle 解析
+	 *   Tier 2: 内容过短或缺少图片时 → headless Electron BrowserWindow 重新抓取 JS 渲染后的 HTML → defuddle 再解析
+	 *
 	 * @param url 目标 URL / Target URL
 	 * @param stsId 队列条目 UUID，写入 frontmatter / Queue entry UUID, written to frontmatter
 	 */
 	async processUrl(url: string, stsId: string): Promise<ProcessResult> {
-		// 1. 下载 HTML / Download HTML
+		// 1. Tier 1: 下载静态 HTML / Tier 1: download static HTML
 		const html = await this.fetchHtml(url);
 
 		// 2. defuddle 解析 / Parse with defuddle
-		const parsed = await this.parseWithDefuddle(html, url);
+		let parsed = await this.parseWithDefuddle(html, url);
 
-		// 3. 生成安全文件名 / Generate safe filename
+		// 3. Tier 2: 内容过短或缺少图片 → headless BrowserWindow 重试
+		// Tier 2: content too short or lacking images → retry with headless BrowserWindow
+		const contentLen = (parsed.content || '').length;
+		const imageCount = parsed.imageUrls.length;
+		if (contentLen < MIN_CONTENT_LENGTH || imageCount < MIN_IMAGE_COUNT) {
+			// eslint-disable-next-line no-console
+			console.debug(
+				`Share to Save: 静态 HTML 内容不足 (text=${contentLen}chars, img=${imageCount})，尝试 headless / Static HTML insufficient, trying headless`,
+			);
+			const renderedHtml = await this.headlessExtractor.extractRenderedHtml(url);
+			if (renderedHtml) {
+				const reParsed = await this.parseWithDefuddle(renderedHtml, url);
+				// 仅当 headless 结果更好时才替换 / Only replace if headless result is better
+				if ((reParsed.content || '').length > contentLen) {
+					// eslint-disable-next-line no-console
+					console.debug('Share to Save: Headless 提取成功，内容更长，采用 headless 结果 / Headless extraction succeeded, using headless result');
+					parsed = reParsed;
+				}
+			}
+		}
+
+		// 4. 生成安全文件名 / Generate safe filename
 		const safeTitle = this.sanitizeNoteTitle(parsed.title || 'Untitled');
 		const notePath = normalizePath(`${this.settings.outputFolder}/${safeTitle}.md`);
 
-		// 4. 构建 frontmatter + Markdown body / Build frontmatter + Markdown body
+		// 5. 构建 frontmatter + Markdown body / Build frontmatter + Markdown body
 		const frontmatter = this.buildFrontmatter(parsed, url, stsId);
 		let mdContent = frontmatter + '\n' + parsed.content;
 
-		// 5. 处理图片/附件 / Process images/attachments
+		// 6. 处理图片/附件 / Process images/attachments
 		mdContent = await this.imageHandler.processContent(mdContent, safeTitle);
 
-		// 6. 确保输出目录存在 / Ensure output directory exists
+		// 7. 确保输出目录存在 / Ensure output directory exists
 		const dirExists = await this.vault.adapter.exists(this.settings.outputFolder);
 		if (!dirExists) {
 			await this.vault.createFolder(this.settings.outputFolder);
 		}
 
-		// 7. 写入 .md 文件 / Write .md file
+		// 8. 写入 .md 文件 / Write .md file
 		await this.vault.create(notePath, mdContent);
 
 		return { success: true, title: safeTitle };
