@@ -3,10 +3,7 @@
  * Platform-specific content converter: HTML → Markdown
  *
  * defuddle 负责元数据提取（title/author/published），
- * 转换器负责 HTML 内容 → Markdown（含图片在原文位置）。
- *
- * defuddle handles metadata extraction (title/author/published),
- * converters handle HTML content → Markdown (with images in place).
+ * 转换器负责 HTML 内容 → Markdown（含图片在原文位置 + 补充提取）。
  */
 
 import TurndownService from 'turndown';
@@ -14,80 +11,113 @@ import TurndownService from 'turndown';
 // ─── 接口 / Interface ────────────────────────────────────────────────────────
 
 export interface ContentConverter {
-	/** 匹配此转换器的域名模式 / Domain pattern this converter handles */
 	readonly domainPattern: RegExp;
-	/** 内容容器 CSS 选择器 / Content container CSS selector */
-	readonly contentSelector: string;
-	/** HTML Document → Markdown / Convert HTML Document to Markdown */
 	convert(doc: Document, url: string): string;
 }
+
+// ─── 微信常量 / WeChat constants ─────────────────────────────────────────────
+
+/** 微信内容容器选择器（参考 ima-copilot-sync WECHAT_CONTENT_SELECTORS） */
+const WECHAT_CONTAINERS = [
+	'#js_content', '.rich_media_content', '.share_content_page',
+	'#img_list', '#js_video_page_title', '#js_audio_title', '#audio_panel_area',
+	'#js_text_title', '#js_novel_card', '#img-content', '.rich_media',
+];
+
+const SYSTEM_IMG = ['pic_blank.gif', 'res.wx.qq.com/mmbizappmsg'];
 
 // ─── 微信转换器 / WeChat Converter ──────────────────────────────────────────
 
 class WeChatConverter implements ContentConverter {
 	readonly domainPattern = /mp\.weixin\.qq\.com/;
-	readonly contentSelector = '#js_content';
 
 	convert(doc: Document, _url: string): string {
-		// 1. 取 #js_content 元素 / Get #js_content element
-		const el = doc.querySelector(this.contentSelector);
-		if (!el) return '';
+		const container = this.detectContainer(doc);
+		const containerHtml = container ? this.buildCleanHtml(container) : '';
+		let markdown = containerHtml ? this.getTurndown().turndown(containerHtml) : '';
 
-		// 2. 克隆并修复图片：data-src → src（参考 all-in-obs cleanContentHtml）
-		// Clone and fix images: data-src → src
-		const clone = el.cloneNode(true) as HTMLElement;
-		clone.querySelectorAll('img').forEach(img => {
-			const dataSrc = img.getAttribute('data-src');
-			if (dataSrc && !img.src) {
-				img.setAttribute('src', dataSrc);
-			}
-		});
-
-		// 3. Turndown 转换 / Convert with Turndown
-		const miniHtml = `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>${clone.innerHTML}</body></html>`;
-		let markdown = this.getTurndown().turndown(miniHtml);
-
-		// 4. 补充全页图片：部分微信模板图片在 #js_content 之外
-		// Supplement full-page images: some WeChat templates put images outside #js_content
+		// 全页补充图片（部分微信模板图片在容器之外）
 		const supplement = this.supplementImages(doc, markdown);
 		if (supplement) {
 			markdown = markdown.trimEnd() + '\n' + supplement;
 		}
-
 		return markdown;
 	}
 
+	// ── 容器检测 ──────────────────────────────────────────────────────────
+
 	/**
-	 * 全页扫描 WeChat 正文图片，补充 Turndown 遗漏的
-	 * Scan full page for WeChat content images missed by Turndown
+	 * 检测微信文章内容容器（覆盖 7+ 种微信格式）
+	 * Detect WeChat article content container (covers 7+ WeChat formats)
+	 */
+	private detectContainer(doc: Document): HTMLElement | null {
+		// 标准图文 / Standard article（需足够文本，防止空壳 div）
+		const js = doc.getElementById('js_content');
+		if (js && (js.textContent?.trim().length || 0) > 50) return js;
+
+		// 图片分享页 / Image share page
+		const share = doc.querySelector('.share_content_page');
+		if (share) {
+			const t = share.textContent?.trim().length || 0;
+			if (t > 30 || share.querySelectorAll('img').length >= 2) return share as HTMLElement;
+		}
+
+		// 富文本后备 / Rich media fallback
+		for (const sel of ['.rich_media_content', '#img-content', '.rich_media']) {
+			const el = doc.querySelector(sel);
+			if (el && (el.textContent?.trim().length || 0) > 30) return el as HTMLElement;
+		}
+
+		return null;
+	}
+
+	/** 克隆容器、data-src→src、构建最小 HTML */
+	private buildCleanHtml(el: HTMLElement): string {
+		const clone = el.cloneNode(true) as HTMLElement;
+		clone.querySelectorAll('img').forEach(img => {
+			const ds = img.getAttribute('data-src');
+			if (ds && !img.src) img.setAttribute('src', ds);
+		});
+		return `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>${clone.innerHTML}</body></html>`;
+	}
+
+	// ── 图片补充 ──────────────────────────────────────────────────────────
+
+	/**
+	 * 全页扫描补充 Turndown 遗漏的图片
+	 * Scan full page to supplement images missed by Turndown
 	 *
 	 * 参考 ima-copilot-sync extractWeChatImages
-	 * Based on ima-copilot-sync's extractWeChatImages
+	 * - from=appmsg 是区分正文图和推荐缩略图的唯一特征
+	 * - data-src 优先（懒加载），回退 src
+	 * - 已有 Markdown 图片去重
 	 */
 	private supplementImages(doc: Document, existingMarkdown: string): string {
 		const seen = new Set<string>();
 		const parts: string[] = [];
 
-		// 先收集已有 Markdown 中的图片用于去重
-		const mdImgRegex = /!\[.*\]\((https?:\/\/[^)]+)\)/g;
-		let mdMatch: RegExpExecArray | null;
-		while ((mdMatch = mdImgRegex.exec(existingMarkdown)) !== null) {
-			if (mdMatch[1]) seen.add(mdMatch[1]);
+		// 收集已有 Markdown 中的图片 URL / Collect existing image URLs
+		const re = /!\[[^\]]*\]\((https?:\/\/[^)]+)\)/g;
+		let m: RegExpExecArray | null;
+		while ((m = re.exec(existingMarkdown)) !== null) {
+			if (m[1]) seen.add(m[1]);
 		}
 
-		// 扫描全页 img，优先 data-src；from=appmsg 过滤推荐缩略图
+		// DOM <img> 扫描（优先 data-src）
 		for (const img of Array.from(doc.querySelectorAll('img'))) {
-			const rawUrl = img.getAttribute('data-src') || img.src;
-			if (!rawUrl || !/^https?:\/\//.test(rawUrl)) continue;
-			if (rawUrl.includes('pic_blank.gif')) continue;
-			if (rawUrl.includes('res.wx.qq.com/mmbizappmsg')) continue;
-			if (seen.has(rawUrl)) continue;
-			seen.add(rawUrl);
-			parts.push(`![${(img as HTMLImageElement).alt || ''}](${rawUrl})`);
+			const url = img.getAttribute('data-src') || img.src;
+			if (!url || !/^https?:\/\//.test(url)) continue;
+			if (SYSTEM_IMG.some(f => url.includes(f))) continue;
+			if (!url.includes('from=appmsg')) continue;
+			if (seen.has(url)) continue;
+			seen.add(url);
+			parts.push(`![${(img as HTMLImageElement).alt || ''}](${url})`);
 		}
 
 		return parts.length > 0 ? parts.join('\n') + '\n' : '';
 	}
+
+	// ── Turndown ──────────────────────────────────────────────────────────
 
 	private turndownInstance: TurndownService | null = null;
 
@@ -95,50 +125,38 @@ class WeChatConverter implements ContentConverter {
 		if (this.turndownInstance) return this.turndownInstance;
 
 		const td = new TurndownService({
-			headingStyle: 'atx',
-			codeBlockStyle: 'fenced',
-			emDelimiter: '_',
-			bulletListMarker: '-',
+			headingStyle: 'atx', codeBlockStyle: 'fenced',
+			emDelimiter: '_', bulletListMarker: '-',
 		});
 
-		// 图片规则 / Image rule（优先取 data-src，回退 src）
-		td.addRule('wechatImage', {
+		td.addRule('image', {
 			filter: 'img',
-			replacement: (_content: string, node: Node) => {
+			replacement: (_c: string, node: Node) => {
 				const el = node as HTMLElement;
-				const rawUrl = el.getAttribute('data-src')
-					|| el.getAttribute('src')
-					|| '';
-				if (!rawUrl || !/^https?:\/\//.test(rawUrl)) return '';
+				const url = el.getAttribute('data-src') || el.getAttribute('src') || '';
+				if (!url || !/^https?:\/\//.test(url)) return '';
 				const alt = (el.getAttribute('alt') || '').replace(/\s+/g, ' ').trim() || 'Image';
-				return `![${alt}](${rawUrl})`;
+				return `![${alt}](${url})`;
 			},
 		});
 
-		// SVG 包裹图片：提取内部 <img> 再移除 SVG 容器
-		// WeChat ezDrop 格式: <svg><foreignObject><img src="..."></foreignObject></svg>
-		// Turndown 默认不进入 foreignObject，需在移除 SVG 前取出 img
+		// SVG 包裹图片（WeChat ezDrop）
 		td.addRule('svgImage', {
 			filter: (node: HTMLElement) => node.nodeName.toLowerCase() === 'svg',
-			replacement: (_content: string, node: Node) => {
-				const svg = node as HTMLElement;
-				const imgs = svg.querySelectorAll('img');
+			replacement: (_c: string, node: Node) => {
 				const parts: string[] = [];
-				imgs.forEach(img => {
-					const rawUrl = img.getAttribute('data-src')
-						|| img.getAttribute('src')
-						|| '';
-					if (rawUrl && /^https?:\/\//.test(rawUrl)) {
+				(node as HTMLElement).querySelectorAll('img').forEach(img => {
+					const url = img.getAttribute('data-src') || img.getAttribute('src') || '';
+					if (url && /^https?:\/\//.test(url)) {
 						const alt = (img.getAttribute('alt') || '').replace(/\s+/g, ' ').trim() || 'Image';
-						parts.push(`![${alt}](${rawUrl})`);
+						parts.push(`![${alt}](${url})`);
 					}
 				});
 				return parts.join('\n');
 			},
 		});
 
-		// 移除 style/script/noscript / Remove style/script/noscript
-		td.addRule('removeStyleTags', {
+		td.addRule('removeTags', {
 			filter: ['style', 'script', 'noscript'],
 			replacement: () => '',
 		});
@@ -155,10 +173,6 @@ const converters: ContentConverter[] = [
 	// new XiaohongshuConverter(),  // 后续
 ];
 
-/**
- * 根据 URL 查找匹配的内容转换器（无匹配时返回 null）
- * Find matching content converter for a URL (null if no match)
- */
 export function findConverter(url: string): ContentConverter | null {
 	return converters.find(c => c.domainPattern.test(url)) ?? null;
 }
