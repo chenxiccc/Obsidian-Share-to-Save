@@ -192,6 +192,10 @@ export class ImageHandler {
 
 		// 逐图下载并替换 / Download and replace one by one
 		for (const { full, url } of matches) {
+			// 非图片链接仅处理可识别文件扩展名的 URL，网页链接保持原样
+			// Non-image links: only process URLs with recognizable file extensions; web links stay as-is
+			const isImageRegex = regex.source === IMG_URL_REGEX.source;
+			if (!isImageRegex && !guessFileExtension(url)) continue;
 			try {
 				const filename = buildStableFilename(url, {
 					titleBase: noteTitle,

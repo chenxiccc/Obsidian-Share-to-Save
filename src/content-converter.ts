@@ -122,12 +122,17 @@ class WeChatConverter implements ContentConverter {
 			if (m[1]) seen.add(m[1]);
 		}
 
-		// DOM <img> 扫描（优先 data-src）
+		// DOM <img> 扫描（优先 data-src），跳过容器内和 <a> 缩略图
+		// DOM <img> scan: prefer data-src, skip container-internal and <a> thumbnails
 		for (const img of Array.from(doc.querySelectorAll('img'))) {
 			const url = img.getAttribute('data-src') || img.src;
 			if (!url || !/^https?:\/\//.test(url)) continue;
 			if (SYSTEM_IMG.some(f => url.includes(f))) continue;
 			if (!url.includes('from=appmsg')) continue;
+			// 容器内 → Turndown 已处理 / Inside container → Turndown already handled
+			if (img.closest('#js_content, .rich_media_content, .share_content_page')) continue;
+			// <a> 内 → 推荐缩略图或 linkedImage 已处理 / Inside <a> → thumbnail or linkedImage handled
+			if (img.closest('a')) continue;
 			if (seen.has(url)) continue;
 			seen.add(url);
 			parts.push(`![${(img as HTMLImageElement).alt || ''}](${url})`);
@@ -184,6 +189,25 @@ class WeChatConverter implements ContentConverter {
 					}
 				});
 				return parts.join('\n');
+			},
+		});
+
+		// 带图片的链接（推荐阅读缩略图等）：只输出文字链接，丢弃装饰性缩略图
+		// Linked images (recommended reading thumbnails etc.): output only text link, discard decorative thumbnail
+		td.addRule('linkedImage', {
+			filter: (node: HTMLElement) =>
+				node.nodeName.toLowerCase() === 'a' && node.querySelector('img') !== null,
+			replacement: (_content: string, node: Node) => {
+				const el = node as HTMLElement;
+				const href = el.getAttribute('href') || '';
+				const img = el.querySelector('img');
+				const imgAlt = img ? ((img as HTMLImageElement).alt || '') : '';
+				const rawText = (el.textContent || '').trim();
+				const textOnly = rawText.replace(imgAlt, '').replace(/\s+/g, ' ').trim();
+				if (href && /^https?:\/\//.test(href) && textOnly) {
+					return `[${textOnly}](${href})`;
+				}
+				return '';
 			},
 		});
 

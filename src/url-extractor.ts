@@ -9,7 +9,7 @@
  * 通用的 URL 匹配正则（宽松模式，匹配 http/https 开头的 URL）
  * Generic URL matching regex (loose mode, matches URLs starting with http/https)
  */
-const URL_REGEX = /(https?:\/\/[^\s,，。;；!！?？"')\]）>}　、。！，；：]+)/i;
+const URL_REGEX = /(https?:\/\/[^\s,，。;；!！"')\]）>}　、。！，；：]+)/i;
 
 /**
  * 尾部清理正则：移除 URL 末尾不应有的标点符号
