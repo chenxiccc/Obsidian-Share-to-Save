@@ -8,7 +8,8 @@
 import { Vault, normalizePath } from 'obsidian';
 import type { ParsedContent, ProcessResult, ShareToSaveSettings } from './types';
 import { ImageHandler } from './image-handler';
-import { Defuddle } from 'defuddle/node';
+import Defuddle from 'defuddle/full';
+import type { DefuddleOptions, DefuddleResponse } from 'defuddle/full';
 import { HeadlessExtractor } from './headless-extractor';
 
 /** Chrome UA for Node.js https — 与 ima-copilot-sync 完全一致 / Chrome UA — identical to ima-copilot-sync */
@@ -54,7 +55,7 @@ export class Downloader {
 		const html = await this.fetchHtml(url);
 
 		// 2. defuddle 解析 / Parse with defuddle
-		let parsed = await this.parseWithDefuddle(html, url);
+		let parsed = this.parseWithDefuddle(html, url);
 
 		// 3. Tier 2: headless 判定 / Tier 2: headless decision
 		const contentLen = (parsed.content || '').length;
@@ -72,29 +73,23 @@ export class Downloader {
 
 		if (contentTooShort || hasOrphanImages || looksLikeJsPage) {
 			// eslint-disable-next-line no-console
-			console.debug(
+			console.warn(
 				`Share to Save: 静态 HTML 内容不足 ` +
 				`(text=${contentLen}chars, htmlSize=${html.length}, hasImgs=${htmlHasImgs}, mdHasImgs=${mdHasImages})，` +
 				`尝试 headless / Static HTML insufficient, trying headless`,
 			);
 			const renderedHtml = await this.headlessExtractor.extractRenderedHtml(url);
-			if (renderedHtml) {
-				const reParsed = await this.parseWithDefuddle(renderedHtml, url);
+			if (renderedHtml && HeadlessExtractor.hasWeChatContent(renderedHtml)) {
+				const reParsed = this.parseWithDefuddle(renderedHtml, url);
 				// 仅当 headless 结果更好时才替换 / Only replace if headless result is better
 				if ((reParsed.content || '').length > contentLen) {
 					// eslint-disable-next-line no-console
-					console.debug(
-						`Share to Save: Headless 提取成功 ` +
-						`(content: ${contentLen} → ${(reParsed.content || '').length} chars)，` +
-						`采用 headless 结果 / Headless succeeded, using headless result`,
+					console.warn(
+						`Share to Save: Headless 成功 ` +
+						`(content: ${contentLen} → ${(reParsed.content || '').length} chars) / ` +
+						`Headless succeeded`,
 					);
 					parsed = reParsed;
-				} else {
-					// eslint-disable-next-line no-console
-					console.debug(
-						`Share to Save: Headless 结果未改善 (${(reParsed.content || '').length} ≤ ${contentLen})，` +
-						`保持静态结果 / Headless result not better, keeping static`,
-					);
 				}
 			}
 		}
@@ -200,21 +195,52 @@ export class Downloader {
 	}
 
 	/**
-	 * 调用 defuddle/node 解析 HTML → Markdown
-	 * Parse HTML → Markdown via defuddle/node
+	 * 根据 URL 确定 defuddle 的 contentSelector 参数
+	 * Determine defuddle contentSelector based on URL
+	 *
+	 * 特定网站指定内容容器选择器，避免 defuddle 在整页中提取出 JS/UI 残渣
+	 * Specify content container selector for specific sites to prevent JS/UI artifacts in extraction
 	 */
-	private async parseWithDefuddle(html: string, url: string): Promise<ParsedContent> {
-		const result = await Defuddle(html, url, { markdown: false });
-		const markdown = result.contentMarkdown
-			?? result.content
-			?? '';
+	private getContentSelector(url: string): string | undefined {
+		if (/mp\.weixin\.qq\.com/.test(url)) {
+			return '#js_content';
+		}
+		return undefined;
+	}
+
+	/**
+	 * 调用 defuddle/full 解析 HTML → Markdown
+	 * Parse HTML → Markdown via defuddle/full (browser API, DOMParser)
+	 *
+	 * 参考 ima-copilot-sync html-to-md.ts 实现 / Based on ima-copilot-sync's html-to-md.ts
+	 * 关键：使用 DOMParser（Electron 原生）解析 HTML，而非 linkedom（会因复杂 HTML 失败）
+	 * Key: use DOMParser (Electron native) to parse HTML, not linkedom (fails on complex HTML)
+	 */
+	private parseWithDefuddle(html: string, url: string): ParsedContent {
+		const parser = new DOMParser();
+		const doc = parser.parseFromString(html, 'text/html');
+
+		const defuddleOpts: DefuddleOptions = {
+			url,
+			markdown: true,
+			useAsync: false,
+		};
+
+		const contentSelector = this.getContentSelector(url);
+		if (contentSelector) {
+			defuddleOpts.contentSelector = contentSelector;
+		}
+
+		const result = new Defuddle(doc, defuddleOpts).parse();
+
+		const markdown = result.content ?? '';
 
 		const imageUrls = this.extractImageUrls(markdown);
 
 		return {
 			title: result.title || 'Untitled',
 			author: result.author || '',
-			authorUrl: result.authorUrl,
+			authorUrl: (result as DefuddleResponse & { authorUrl?: string }).authorUrl,
 			published: result.published || '',
 			content: markdown,
 			imageUrls,

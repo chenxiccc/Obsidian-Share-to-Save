@@ -14,15 +14,12 @@ const CONTENT_POLL_INTERVAL_MS = 500;
 const CONTENT_POLL_MAX_MS = 10_000;
 const BROWSER_PARTITION = 'persist:share-to-save';
 
-/** Chrome UA — 必须硬编码（Obsidian 审核规范禁止使用 navigator API） */
-/** Chrome UA — must be hardcoded (navigator API forbidden by Obsidian review guidelines) */
+/** Chrome UA — 与 ima-copilot-sync 一致 / Chrome UA — identical to ima-copilot-sync */
 const CHROME_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 15_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.7258.108 Safari/537.36';
 
 /**
  * 通用内容容器的 CSS 选择器列表（按优先级排序）
  * Generic content container CSS selector list (ordered by priority)
- *
- * 覆盖常见网站的正文区域 / Cover common website content areas
  */
 const CONTENT_SELECTORS = [
 	// 微信 / WeChat
@@ -33,7 +30,6 @@ const CONTENT_SELECTORS = [
 	'article',
 	'[role="main"]',
 	'main',
-	// 常见 class / Common classes
 	'.post-content',
 	'.article-content',
 	'.entry-content',
@@ -48,8 +44,14 @@ const CONTENT_SELECTORS = [
 
 export class HeadlessExtractor {
 	/**
-	 * 尝试通过 headless BrowserWindow 获取 JS 渲染后的 HTML
-	 * Try to get JS-rendered HTML via headless BrowserWindow
+	 * 尝试通过 headless BrowserWindow 获取 JS 渲染后的完整页面 HTML
+	 * Try to get JS-rendered full page HTML via headless BrowserWindow
+	 *
+	 * 返回完整 outerHTML，由调用方通过 DOMParser + contentSelector 提取内容
+	 * Returns full outerHTML; caller extracts content via DOMParser + contentSelector
+	 *
+	 * 参考 ima-copilot-sync tryHeadlessExtraction 实现
+	 * Based on ima-copilot-sync's tryHeadlessExtraction
 	 *
 	 * @returns 完整的 document.documentElement.outerHTML，失败返回 null
 	 */
@@ -60,8 +62,6 @@ export class HeadlessExtractor {
 			const { remote } = require('electron');
 			RemoteBrowserWindow = remote.BrowserWindow;
 		} catch {
-			// eslint-disable-next-line no-console
-			console.debug('Share to Save: Electron remote 不可用，跳过 headless 提取 / Electron remote unavailable, skipping headless extraction');
 			return null;
 		}
 		if (!RemoteBrowserWindow) {
@@ -82,10 +82,9 @@ export class HeadlessExtractor {
 			});
 
 			win.webContents.setUserAgent(CHROME_UA);
-
 			await this.loadUrlWithTimeout(win, url);
 
-			const html = await this.pollContentAndExtract(win);
+			const html = await this.waitForContentAndExtract(win);
 			return html;
 		} catch (err) {
 			// eslint-disable-next-line no-console
@@ -97,15 +96,26 @@ export class HeadlessExtractor {
 	}
 
 	/**
+	 * 判断提取的 HTML 是否包含微信文章内容
+	 * Check if extracted HTML contains WeChat article content
+	 */
+	static hasWeChatContent(html: string): boolean {
+		for (const sel of CONTENT_SELECTORS) {
+			const key = sel.replace(/^[#.]/, '');
+			if (html.includes(key)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
 	 * 加载 URL 并等待页面加载完成（或超时）
 	 * Load URL and wait for page to finish loading (or timeout)
 	 */
 	private loadUrlWithTimeout(win: any, url: string): Promise<void> {
 		return new Promise<void>((resolve) => {
-			const timer = setTimeout(() => {
-				// 超时不 reject，仍尝试提取当前 DOM / Don't reject on timeout, still try to extract current DOM
-				resolve();
-			}, LOAD_TIMEOUT_MS);
+			const timer = setTimeout(() => resolve(), LOAD_TIMEOUT_MS);
 
 			let finished = false;
 
@@ -134,13 +144,13 @@ export class HeadlessExtractor {
 	}
 
 	/**
-	 * 轮询内容容器出现后提取 outerHTML
-	 * Poll for content container to appear, then extract outerHTML
+	 * 轮询内容容器出现后提取完整 outerHTML
+	 * Poll for content container to appear, then extract full outerHTML
 	 *
-	 * 在页面中轮询检查：是否有内容容器包含足够文本（>30 字）或多张图片
-	 * Poll the page to check: does any content container have enough text (>30 chars) or multiple images
+	 * 参考 ima-copilot-sync HeadlessExtractor.waitForContentAndExtract
+	 * Based on ima-copilot-sync's HeadlessExtractor.waitForContentAndExtract
 	 */
-	private async pollContentAndExtract(win: any): Promise<string | null> {
+	private async waitForContentAndExtract(win: any): Promise<string | null> {
 		const start = Date.now();
 
 		while (Date.now() - start < CONTENT_POLL_MAX_MS) {
@@ -157,15 +167,12 @@ export class HeadlessExtractor {
 								if (textLen > 30 || imgCount >= 2) return true;
 							} catch (e) { /* skip */ }
 						}
-						// 兜底：body 有足够内容 / Fallback: body has enough content
-						var bodyText = (document.body.textContent || '').trim().length;
-						return bodyText > 200;
+						return false;
 					})()`,
 				);
 				if (hasContent) break;
 			} catch {
 				// executeJavaScript 在页面未就绪时可能抛异常
-				// executeJavaScript may throw if page isn't ready yet
 			}
 			await new Promise(r => setTimeout(r, CONTENT_POLL_INTERVAL_MS));
 		}
