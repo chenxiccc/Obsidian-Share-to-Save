@@ -231,9 +231,7 @@ export class Downloader {
 		let markdown = result.content ?? '';
 
 		// 补充提取 defuddle 遗漏的图片（参考 extractWeChatImages）
-		// 微信等页面使用 data-src 懒加载、cdn_url 等 defuddle 无法识别的模式
 		// Supplementary image extraction for images defuddle missed
-		// WeChat etc. use data-src lazy loading, cdn_url patterns defuddle can't recognize
 		const supplementaryImages = this.extractSupplementaryImages(html, doc, markdown);
 		if (supplementaryImages) {
 			markdown = markdown.trimEnd() + '\n' + supplementaryImages;
@@ -258,6 +256,30 @@ export class Downloader {
 	 * 参考 ima-copilot-sync html-to-md.ts normalizeImgUrl
 	 * Based on ima-copilot-sync's html-to-md.ts normalizeImgUrl
 	 */
+	/**
+	 * 从 URL 提取图片唯一标识（用于跨 CDN 去重）
+	 * Extract image unique ID from URL (for cross-CDN dedup)
+	 *
+	 * WeChat mmbiz URL 结构 / structure: .../mmbiz_jpg/{hash}/0?wx_fmt=jpeg
+	 * sz_mmbiz_jpg vs mmbiz_png 等子域名变体共享同一 hash → 取倒数第二段去重
+	 * sz_mmbiz_jpg vs mmbiz_png variants share the same hash → use second-to-last segment
+	 */
+	private stableNameFromUrl(url: string): string {
+		try {
+			const urlObj = new URL(url);
+			const segments = urlObj.pathname.split('/').filter(s => s.length > 0);
+			if (segments.length < 2) return '';
+			// 末尾段是纯数字（如 /0）→ 取倒数第二段 / Last segment is numeric (e.g. /0) → use second-to-last
+			const last = segments[segments.length - 1] ?? '';
+			const id = /^\d+$/.test(last) && segments.length >= 2
+				? segments[segments.length - 2]
+				: last;
+			return id ?? '';
+		} catch {
+			return '';
+		}
+	}
+
 	private normalizeImgUrl(url: string): string {
 		try {
 			const u = new URL(url);
@@ -277,15 +299,20 @@ export class Downloader {
 	private extractSupplementaryImages(html: string, doc: Document, existingContent: string): string {
 		const seen = new Set<string>();
 		const seenNormalized = new Set<string>();
+		// 文件名去重：同一 stable filename → 同一张图 / Filename dedup: same stable filename → same image
+		const seenFilenames = new Set<string>();
 		const parts: string[] = [];
 
-		// 先收集已有 Markdown 中的图片 URL 用于去重 / Collect existing Markdown image URLs for dedup
+		// 先收集已有 Markdown 中的图片用于去重 / Collect existing images from Markdown for dedup
 		const mdImgRegex = /!\[.*\]\((https?:\/\/[^)]+)\)/g;
 		let mdMatch: RegExpExecArray | null;
 		while ((mdMatch = mdImgRegex.exec(existingContent)) !== null) {
 			if (mdMatch[1]) {
 				seen.add(mdMatch[1]);
 				seenNormalized.add(this.normalizeImgUrl(mdMatch[1]));
+				// 用 buildStableFilename 做跨 CDN 去重 / Cross-CDN dedup via stable filename
+				const existingStableName = this.stableNameFromUrl(mdMatch[1]);
+				if (existingStableName) seenFilenames.add(existingStableName);
 			}
 		}
 
@@ -300,8 +327,11 @@ export class Downloader {
 			if (!imgUrl.includes('from=appmsg')) continue;
 			const normalized = this.normalizeImgUrl(imgUrl);
 			if (seen.has(imgUrl) || seenNormalized.has(normalized)) continue;
+			const stableName = this.stableNameFromUrl(imgUrl);
+			if (stableName && seenFilenames.has(stableName)) continue;
 			seen.add(imgUrl);
 			seenNormalized.add(normalized);
+			if (stableName) seenFilenames.add(stableName);
 			parts.push(`![${(img as HTMLImageElement).alt || ''}](${imgUrl})`);
 		}
 
