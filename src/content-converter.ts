@@ -37,7 +37,8 @@ class WeChatConverter implements ContentConverter {
 		let markdown = containerHtml ? this.getTurndown().turndown(containerHtml) : '';
 
 		// 全页补充图片（部分微信模板图片在容器之外）
-		const supplement = this.supplementImages(doc, markdown);
+		const outerHtml = doc.documentElement.outerHTML || '';
+		const supplement = this.supplementImages(doc, outerHtml, markdown);
 		if (supplement) {
 			markdown = markdown.trimEnd() + '\n' + supplement;
 		}
@@ -92,7 +93,7 @@ class WeChatConverter implements ContentConverter {
 	 * - data-src 优先（懒加载），回退 src
 	 * - 已有 Markdown 图片去重
 	 */
-	private supplementImages(doc: Document, existingMarkdown: string): string {
+	private supplementImages(doc: Document, rawHtml: string, existingMarkdown: string): string {
 		const seen = new Set<string>();
 		const parts: string[] = [];
 
@@ -112,6 +113,18 @@ class WeChatConverter implements ContentConverter {
 			if (seen.has(url)) continue;
 			seen.add(url);
 			parts.push(`![${(img as HTMLImageElement).alt || ''}](${url})`);
+		}
+
+		// cdn_url 正则：swiper 轮播隐藏图不在 DOM 中（参考 ima-copilot-sync 踩坑 #3/#8）
+		// cdn_url regex: swiper hidden images not in DOM
+		const cdnRe = /cdn_url\s*:\s*['"](https?:\/\/[^'"]*?)['"]/gi;
+		let cm: RegExpExecArray | null;
+		while ((cm = cdnRe.exec(rawHtml)) !== null) {
+			const url = cm[1] as string;
+			if (!seen.has(url)) {
+				seen.add(url);
+				parts.push(`![](${url})`);
+			}
 		}
 
 		return parts.length > 0 ? parts.join('\n') + '\n' : '';
