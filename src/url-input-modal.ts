@@ -1,9 +1,9 @@
 /**
- * URL 输入模态框：用户粘贴分享文本，提取 URL 并加入队列
- * URL input modal: user pastes share text, extracts URL and adds to queue
+ * URL 输入模态框：用户粘贴分享文本，提取 URL 后写入队列并立即处理
+ * URL input modal: user pastes share text, extracts URL, writes to queue and processes immediately
  */
 
-import { Modal, App, Setting, Platform } from 'obsidian';
+import { Modal, App, ButtonComponent } from 'obsidian';
 import type { Translator } from './i18n';
 import { extractUrl } from './url-extractor';
 
@@ -13,10 +13,7 @@ export class UrlInputModal extends Modal {
 	constructor(
 		app: App,
 		private t: Translator,
-		private onSave: (
-			text: string,
-			mode: 'queue' | 'processNow',
-		) => Promise<void>,
+		private onSave: (text: string) => Promise<void>,
 	) {
 		super(app);
 	}
@@ -33,7 +30,7 @@ export class UrlInputModal extends Modal {
 		const textareaEl = contentEl.createEl('textarea', {
 			attr: {
 				placeholder: this.t('modal.placeholder'),
-				rows: '6',
+				rows: '8',
 			},
 			cls: 'sts-url-textarea',
 		});
@@ -42,64 +39,30 @@ export class UrlInputModal extends Modal {
 		// 自动聚焦 / Auto focus
 		setTimeout(() => textareaEl.focus(), 50);
 
-		// 按钮行 / Button row
+		// 底部"立即保存"按钮 / Bottom "Save now" button
 		const buttonRow = contentEl.createDiv({ cls: 'sts-button-row' });
+		new ButtonComponent(buttonRow)
+			.setButtonText(this.t('modal.saveNow'))
+			.setCta()
+			.onClick(() => this.handleSubmit());
 
-		// Desktop: "立即处理" 按钮 / Desktop: "Process now" button
-		if (Platform.isDesktop) {
-			new Setting(buttonRow)
-				.addButton(btn =>
-					btn
-						.setButtonText(this.t('modal.processNow'))
-						.setCta()
-						.onClick(() => this.handleSubmit('processNow'))
-				);
-		}
-
-		// "保存到队列" 按钮 / "Save to queue" button
-		new Setting(buttonRow)
-			.addButton(btn =>
-				btn
-					.setButtonText(this.t('modal.saveQueue'))
-					.setCta()
-					.onClick(() => this.handleSubmit('queue'))
-			);
-
-		// "关闭" 按钮 / "Close" button
-		new Setting(buttonRow)
-			.addButton(btn =>
-				btn
-					.setButtonText(this.t('modal.cancel'))
-					.onClick(() => this.close())
-			);
-
-		// 键盘快捷键 / Keyboard shortcut: Enter → 保存到队列
+		// Enter 提交 / Enter to submit
 		textareaEl.addEventListener('keydown', (e: KeyboardEvent) => {
-			if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-				// Cmd/Ctrl+Enter → 立即处理（桌面端）/ Process now (desktop)
-				if (Platform.isDesktop) {
-					this.handleSubmit('processNow');
-				}
-			} else if (e.key === 'Enter' && !e.shiftKey) {
-				// Enter → 保存到队列 / Save to queue
+			if (e.key === 'Enter' && !e.shiftKey) {
 				e.preventDefault();
-				this.handleSubmit('queue');
+				this.handleSubmit();
 			}
 		});
 	}
 
-	/**
-	 * 提交处理 / Handle submission
-	 */
-	private async handleSubmit(mode: 'queue' | 'processNow'): Promise<void> {
+	private async handleSubmit(): Promise<void> {
 		const text = this.textarea.value.trim();
 		if (!text) {
 			this.close();
 			return;
 		}
-
 		this.close();
-		await this.onSave(text, mode);
+		await this.onSave(text);
 	}
 
 	onClose(): void {

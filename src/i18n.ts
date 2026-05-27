@@ -24,17 +24,9 @@ export const STRINGS: Record<string, { zh: string; en: string }> = {
 		zh: '粘贴链接或分享文本...',
 		en: 'Paste URL or share text...',
 	},
-	'modal.saveQueue': {
-		zh: '保存到队列',
-		en: 'Save to queue',
-	},
-	'modal.processNow': {
-		zh: '立即处理',
-		en: 'Process now',
-	},
-	'modal.cancel': {
-		zh: '关闭',
-		en: 'Close',
+	'modal.saveNow': {
+		zh: '立即保存',
+		en: 'Save now',
 	},
 	'menu.button': {
 		zh: '保存到 Share to Save',

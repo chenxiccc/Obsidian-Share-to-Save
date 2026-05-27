@@ -73,12 +73,7 @@ export default class ShareToSavePlugin extends Plugin {
 
 		// ── Ribbon 按钮（全平台）/ Ribbon button (all platforms) ──
 		this.addRibbonIcon('cloud-download', this.t('ribbon.tooltip'), () => {
-			const modal = new UrlInputModal(
-				this.app,
-				this.t,
-				(text, mode) => this.handleUrlInput(text, mode),
-			);
-			modal.open();
+			new UrlInputModal(this.app, this.t, (text) => this.handleUrlInput(text)).open();
 		});
 
 		// ── 命令（全平台）/ Command (all platforms) ──
@@ -86,12 +81,7 @@ export default class ShareToSavePlugin extends Plugin {
 			id: 'save-url',
 			name: this.t('ribbon.tooltip'),
 			callback: () => {
-				const modal = new UrlInputModal(
-					this.app,
-					this.t,
-					(text, mode) => this.handleUrlInput(text, mode),
-				);
-				modal.open();
+				new UrlInputModal(this.app, this.t, (text) => this.handleUrlInput(text)).open();
 			},
 		});
 
@@ -145,10 +135,7 @@ export default class ShareToSavePlugin extends Plugin {
 	 * @param text 用户输入的文本 / User input text
 	 * @param mode 'queue' — 仅保存到队列; 'processNow' — 保存后立即处理（仅桌面端）
 	 */
-	private async handleUrlInput(
-		text: string,
-		mode: 'queue' | 'processNow',
-	): Promise<void> {
+	private async handleUrlInput(text: string): Promise<void> {
 		const url = extractUrl(text);
 		if (!url) {
 			new Notice(this.t('notice.noUrl'));
@@ -165,11 +152,11 @@ export default class ShareToSavePlugin extends Plugin {
 			error: null,
 		});
 
-		if (mode === 'processNow' && Platform.isDesktop) {
-			new Notice(this.t('notice.saved'));
+		new Notice(this.t('notice.saved'));
+
+		// 立即处理（桌面端）/ Process immediately (desktop)
+		if (Platform.isDesktop) {
 			await this.fileWatcher?.processNow();
-		} else {
-			new Notice(this.t('notice.saved'));
 		}
 	}
 

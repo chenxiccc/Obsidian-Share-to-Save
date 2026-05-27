@@ -20,14 +20,14 @@
 
 .sts-url-input-modal .sts-button-row {
 	display: flex;
-	justify-content: flex-end;
-	gap: 8px;
-	margin-top: 12px;
+	justify-content: center;
+	margin-top: 16px;
 }
 
-.sts-url-input-modal .sts-button-row .setting-item {
-	border-top: none;
-	padding: 0;
+.sts-url-input-modal .sts-button-row button {
+	min-width: 200px;
+	padding: 8px 32px;
+	font-size: 1.05em;
 }
 
 /* ── 分享菜单注入按钮（移动端）/ Share menu injected button (mobile) ── */
