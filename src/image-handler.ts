@@ -251,12 +251,14 @@ export class ImageHandler {
 	 * Fetch binary data via Node.js https.get
 	 */
 	private nodeHttpsGetBuffer(url: string): Promise<Buffer> {
+		// 根据协议动态选择模块，支持 HTTP 和 HTTPS / Select module by protocol, support both HTTP and HTTPS
+		const protocol = new URL(url).protocol === 'http:' ? 'http' : 'https';
 		// eslint-disable-next-line @typescript-eslint/no-require-imports
-		const https: typeof import('https') = require('https');
+		const mod = require(protocol) as typeof import('https');
 
 		return new Promise<Buffer>((resolve, reject) => {
 			const doRequest = (requestUrl: string): void => {
-				const req = https.get(requestUrl, {
+				const req = mod.get(requestUrl, {
 					headers: {
 						'User-Agent': CHROME_UA,
 						'Accept': 'image/*, */*',

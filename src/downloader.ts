@@ -220,7 +220,16 @@ export class Downloader {
 
 		const result = new Defuddle(doc, defuddleOpts).parse();
 
-		const markdown = result.content ?? '';
+		let markdown = result.content ?? '';
+
+		// 补充提取 defuddle 遗漏的图片（参考 extractWeChatImages）
+		// 微信等页面使用 data-src 懒加载、cdn_url 等 defuddle 无法识别的模式
+		// Supplementary image extraction for images defuddle missed
+		// WeChat etc. use data-src lazy loading, cdn_url patterns defuddle can't recognize
+		const supplementaryImages = this.extractSupplementaryImages(html, doc, markdown);
+		if (supplementaryImages) {
+			markdown = markdown.trimEnd() + '\n' + supplementaryImages;
+		}
 
 		const imageUrls = this.extractImageUrls(markdown);
 
@@ -232,6 +241,63 @@ export class Downloader {
 			content: markdown,
 			imageUrls,
 		};
+	}
+
+	/**
+	 * 补充提取 HTML 中 defuddle 遗漏的图片（用于 data-src 懒加载、cdn_url 等模式）
+	 * Supplementary image extraction for images defuddle missed (data-src, cdn_url, etc.)
+	 *
+	 * 参考 ima-copilot-sync html-to-md.ts extractWeChatImages / Based on ima-copilot-sync's extractWeChatImages
+	 */
+	private extractSupplementaryImages(html: string, doc: Document, existingContent: string): string {
+		const seen = new Set<string>();
+		const parts: string[] = [];
+
+		// 先收集已有 Markdown 中的图片 URL 用于去重 / Collect existing Markdown image URLs for dedup
+		const mdImgRegex = /!\[.*\]\((https?:\/\/[^)]+)\)/g;
+		let mdMatch: RegExpExecArray | null;
+		while ((mdMatch = mdImgRegex.exec(existingContent)) !== null) {
+			if (mdMatch[1]) seen.add(mdMatch[1]);
+		}
+
+		// 全 DOM 搜索 img，优先 data-src（懒加载），回退 src
+		// Full DOM img search, prefer data-src (lazy loading), fallback to src
+		// from=appmsg 过滤推荐缩略图 / from=appmsg filter excludes recommendation thumbnails
+		for (const img of Array.from(doc.querySelectorAll('img'))) {
+			const imgUrl = img.getAttribute('data-src') || img.src;
+			if (!imgUrl || !/^https?:\/\//.test(imgUrl)) continue;
+			if (imgUrl.includes('pic_blank.gif')) continue;
+			if (imgUrl.includes('res.wx.qq.com/mmbizappmsg')) continue;
+			if (!imgUrl.includes('from=appmsg')) continue;
+			if (seen.has(imgUrl)) continue;
+			seen.add(imgUrl);
+			parts.push(`![${(img as HTMLImageElement).alt || ''}](${imgUrl})`);
+		}
+
+		// cdn_url 中含 from=appmsg 的正文图片（轮播隐藏图不在 DOM 中）
+		// Content images from cdn_url with from=appmsg (hidden swiper images not in DOM)
+		const cdnRegex = /cdn_url\s*:\s*['"](https?:\/\/[^'"]*?from=appmsg[^'"]*?)['"]/gi;
+		let cdnMatch: RegExpExecArray | null;
+		while ((cdnMatch = cdnRegex.exec(html)) !== null) {
+			const imgUrl = cdnMatch[1] as string;
+			if (seen.has(imgUrl)) continue;
+			seen.add(imgUrl);
+			parts.push(`![](${imgUrl})`);
+		}
+
+		// data-src 模式（HTML 源码级别，可能不在 DOM 中）/ data-src pattern (HTML source level, may not be in DOM)
+		const dataSrcRegex = /data-src="(https?:\/\/[^"]+?(?:mmbiz|qpic)[^"]*?(?:jpe?g|png|gif|webp)[^"]*?)"/gi;
+		let dsMatch: RegExpExecArray | null;
+		while ((dsMatch = dataSrcRegex.exec(html)) !== null) {
+			const imgUrl = dsMatch[1] as string;
+			if (imgUrl.includes('pic_blank.gif')) continue;
+			if (imgUrl.includes('res.wx.qq.com/mmbizappmsg')) continue;
+			if (seen.has(imgUrl)) continue;
+			seen.add(imgUrl);
+			parts.push(`![](${imgUrl})`);
+		}
+
+		return parts.length > 0 ? parts.join('\n') + '\n' : '';
 	}
 
 	/**
