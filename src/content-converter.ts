@@ -76,10 +76,26 @@ class WeChatConverter implements ContentConverter {
 			},
 		});
 
-		// 移除 SVG / Remove SVG
-		td.addRule('removeSvg', {
+		// SVG 包裹图片：提取内部 <img> 再移除 SVG 容器
+		// WeChat ezDrop 格式: <svg><foreignObject><img src="..."></foreignObject></svg>
+		// Turndown 默认不进入 foreignObject，需在移除 SVG 前取出 img
+		td.addRule('svgImage', {
 			filter: (node: HTMLElement) => node.nodeName.toLowerCase() === 'svg',
-			replacement: () => '',
+			replacement: (_content: string, node: Node) => {
+				const svg = node as HTMLElement;
+				const imgs = svg.querySelectorAll('img');
+				const parts: string[] = [];
+				imgs.forEach(img => {
+					const rawUrl = img.getAttribute('data-src')
+						|| img.getAttribute('src')
+						|| '';
+					if (rawUrl && /^https?:\/\//.test(rawUrl)) {
+						const alt = (img.getAttribute('alt') || '').replace(/\s+/g, ' ').trim() || 'Image';
+						parts.push(`![${alt}](${rawUrl})`);
+					}
+				});
+				return parts.join('\n');
+			},
 		});
 
 		// 移除 style/script/noscript / Remove style/script/noscript
