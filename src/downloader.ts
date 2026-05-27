@@ -51,11 +51,14 @@ export class Downloader {
 	 * @param stsId 队列条目 UUID，写入 frontmatter / Queue entry UUID, written to frontmatter
 	 */
 	async processUrl(url: string, stsId: string): Promise<ProcessResult> {
+		// 剥离微信追踪参数，避免反爬拦截 / Strip WeChat tracking params to avoid anti-crawl
+		const cleanUrl = Downloader.stripWeChatTrackingParams(url);
+
 		// 1. Tier 1: 下载静态 HTML / Tier 1: download static HTML
-		const html = await this.fetchHtml(url);
+		const html = await this.fetchHtml(cleanUrl);
 
 		// 2. defuddle 解析 / Parse with defuddle
-		let parsed = this.parseWithDefuddle(html, url);
+		let parsed = this.parseWithDefuddle(html, cleanUrl);
 
 		// 3. Tier 2: headless 判定 / Tier 2: headless decision
 		const contentLen = (parsed.content || '').length;
@@ -72,9 +75,9 @@ export class Downloader {
 		const looksLikeJsPage = html.length > LOOKS_LIKE_JS_HTML_SIZE && contentLen < LOOKS_LIKE_JS_MAX_CONTENT;
 
 		if (contentTooShort || hasOrphanImages || looksLikeJsPage) {
-			const renderedHtml = await this.headlessExtractor.extractRenderedHtml(url);
+			const renderedHtml = await this.headlessExtractor.extractRenderedHtml(cleanUrl);
 			if (renderedHtml && HeadlessExtractor.hasWeChatContent(renderedHtml)) {
-				const reParsed = this.parseWithDefuddle(renderedHtml, url);
+				const reParsed = this.parseWithDefuddle(renderedHtml, cleanUrl);
 				if ((reParsed.content || '').length > contentLen) {
 					parsed = reParsed;
 				}
@@ -402,5 +405,31 @@ export class Downloader {
 			.replace(/\s+/g, ' ')
 			.trim()
 			.slice(0, 200);
+	}
+
+	/**
+	 * 剥离微信文章 URL 中的跟踪参数，仅保留文章标识
+	 * Strip WeChat article URL tracking params, keep only article identifiers
+	 *
+	 * 参考 ima-copilot-sync sync-manager.ts stripWeChatTrackingParams
+	 * Based on ima-copilot-sync's sync-manager.ts stripWeChatTrackingParams
+	 */
+	static stripWeChatTrackingParams(url: string): string {
+		try {
+			const parsed = new URL(url);
+			if (!parsed.hostname.endsWith('weixin.qq.com') && !parsed.hostname.endsWith('mp.weixin.qq.com')) {
+				return url;
+			}
+			const keep = ['__biz', 'mid', 'idx', 'sn'];
+			const cleaned = new URL('https://mp.weixin.qq.com/s');
+			for (const key of keep) {
+				const val = parsed.searchParams.get(key);
+				if (val) cleaned.searchParams.set(key, val);
+			}
+			if (cleaned.searchParams.toString() === '') return url;
+			return cleaned.toString();
+		} catch {
+			return url;
+		}
 	}
 }
