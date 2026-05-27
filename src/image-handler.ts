@@ -155,11 +155,15 @@ export class ImageHandler {
 		// 确保附件目录存在 / Ensure attachments directory exists
 		await this.ensureAttachmentsDir();
 
+		// 批量去重映射：content hash → wikilink
+		// Batch dedup map: content hash → wikilink
+		const dedupMap = new Map<string, string>();
+
 		// 第一遍：处理图片 / First pass: images
-		markdown = await this.processMatches(markdown, IMG_URL_REGEX, noteTitle);
+		markdown = await this.processMatches(markdown, IMG_URL_REGEX, noteTitle, dedupMap);
 
 		// 第二遍：处理文件链接 / Second pass: file links
-		markdown = await this.processMatches(markdown, FILE_URL_REGEX, noteTitle);
+		markdown = await this.processMatches(markdown, FILE_URL_REGEX, noteTitle, dedupMap);
 
 		return markdown;
 	}
@@ -171,6 +175,7 @@ export class ImageHandler {
 		markdown: string,
 		regex: RegExp,
 		noteTitle: string,
+		dedupMap: Map<string, string>,
 	): Promise<string> {
 		const matches: Array<{ full: string; alt: string; url: string }> = [];
 		const re = new RegExp(regex.source, 'g');
@@ -196,28 +201,37 @@ export class ImageHandler {
 
 				const localPath = `${this.attachmentsDir}/${filename}`;
 
-				// 下载图片 / Download image
-				const buffer = await this.nodeHttpsGetBuffer(url);
+			// 下载图片 / Download image
+			const buffer = await this.nodeHttpsGetBuffer(url);
 
-				// 去重：已存在且内容相同则跳过 / Dedup: skip if exists with same content
-				if (await this.existsWithSameContent(localPath, buffer)) {
-					// eslint-disable-next-line no-console
-					console.debug(`Share to Save: 跳过已存在的附件 / Skipping existing attachment: ${filename}`);
-					markdown = markdown.replace(full, this.buildWikilink(filename, full.startsWith('![')));
-					continue;
-				}
+			// 内容哈希去重：同一次批处理中相同内容复用第一个 wikilink
+			// Content hash dedup: same content within a batch reuses first wikilink
+			const contentHash = this.computeContentHash(buffer);
+			const existingWikilink = dedupMap.get(contentHash);
+			if (existingWikilink) {
+				markdown = markdown.replace(full, existingWikilink);
+				continue;
+			}
+			const wikilink = this.buildWikilink(filename, full.startsWith('!['));
+			dedupMap.set(contentHash, wikilink);
 
-				// 保存二进制文件 / Save binary file
-				const normalized = normalizePath(localPath);
-				const dir = normalized.substring(0, normalized.lastIndexOf('/'));
-				const dirExists = await this.vault.adapter.exists(dir);
-				if (!dirExists) {
-					await this.vault.createFolder(dir);
-				}
-				await this.vault.createBinary(normalized, buffer);
+			// 去重：已存在且内容相同则跳过 / Dedup: skip if exists with same content
+			if (await this.existsWithSameContent(localPath, buffer)) {
+				markdown = markdown.replace(full, wikilink);
+				continue;
+			}
 
-				// 替换原 URL 为 wikilink / Replace original URL with wikilink
-				markdown = markdown.replace(full, this.buildWikilink(filename, full.startsWith('![')));
+			// 保存二进制文件 / Save binary file
+			const normalized = normalizePath(localPath);
+			const dir = normalized.substring(0, normalized.lastIndexOf('/'));
+			const dirExists = await this.vault.adapter.exists(dir);
+			if (!dirExists) {
+				await this.vault.createFolder(dir);
+			}
+			await this.vault.createBinary(normalized, buffer);
+
+			// 替换原 URL 为 wikilink / Replace original URL with wikilink
+			markdown = markdown.replace(full, wikilink);
 			} catch (err) {
 				// 单张图片下载失败不影响整体 / Single image failure doesn't abort the whole process
 				// eslint-disable-next-line no-console
@@ -286,6 +300,20 @@ export class ImageHandler {
 			};
 			doRequest(url);
 		});
+	}
+
+	/**
+	 * 计算二进制内容的快速哈希（用于批处理内去重）
+	 * Compute fast hash of binary content (for batch dedup)
+	 *
+	 * 使用 buffer 长度 + 首尾各 64 字节构成指纹，足以在实践范围内唯一标识图片
+	 * Uses buffer length + first/last 64 bytes as fingerprint, sufficient for image dedup in practice
+	 */
+	private computeContentHash(buffer: Buffer): string {
+		const len = buffer.length;
+		const head = buffer.subarray(0, 64).toString('hex');
+		const tail = buffer.subarray(-64).toString('hex');
+		return `${len}:${head}:${tail}`;
 	}
 
 	/**
