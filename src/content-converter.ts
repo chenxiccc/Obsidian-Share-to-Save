@@ -42,7 +42,20 @@ class WeChatConverter implements ContentConverter {
 		if (supplement) {
 			markdown = markdown.trimEnd() + '\n' + supplement;
 		}
-		return markdown;
+		return this.cleanWhitespace(markdown);
+	}
+
+	/**
+	 * 清理多余空行：去除纯空白行，合并连续空行
+	 * Clean excess whitespace: remove whitespace-only lines, collapse consecutive blank lines
+	 */
+	private cleanWhitespace(md: string): string {
+		return md
+			.split('\n')
+			.map(line => line.trim() ? line.trimEnd() : '')
+			.join('\n')
+			.replace(/\n{3,}/g, '\n\n')
+			.trim();
 	}
 
 	// ── 容器检测 ──────────────────────────────────────────────────────────
