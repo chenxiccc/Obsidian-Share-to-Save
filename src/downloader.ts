@@ -1,26 +1,16 @@
 /**
- * URL 内容下载器：HTML 获取 → defuddle 解析 → 图片处理 → .md 保存
- * URL content downloader: fetch HTML → defuddle parse → image processing → save .md
+ * URL 内容下载器：headless BrowserWindow 获取渲染 HTML → defuddle 解析 → 保存 .md
+ * URL content downloader: headless BrowserWindow → defuddle parse → save .md
  *
- * 仅在桌面端运行（依赖 Node.js https/http）/ Desktop only (depends on Node.js https/http)
+ * 仅在桌面端运行 / Desktop only
  */
 
-import { Vault, normalizePath, requestUrl } from 'obsidian';
+import { Vault, normalizePath } from 'obsidian';
 import type { ParsedContent, ProcessResult, ShareToSaveSettings } from './types';
 import { ImageHandler } from './image-handler';
 import Defuddle from 'defuddle/full';
-import type { DefuddleOptions } from 'defuddle/full';
 import { HeadlessExtractor } from './headless-extractor';
-
-/** Chrome UA for Node.js https — 与 ima-copilot-sync 完全一致 / Chrome UA — identical to ima-copilot-sync */
-const CHROME_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 15_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.7258.108 Safari/537.36';
-
-/** 提取内容过短阈值 / Content too short threshold */
-const MIN_CONTENT_LENGTH = 120;
-/** JS 渲染空壳判定：HTML 超过此字节 / JS shell detection: HTML larger than this (bytes) */
-const LOOKS_LIKE_JS_HTML_SIZE = 500_000;
-/** JS 渲染空壳判定：提取内容短于此字符数 / JS shell detection: content shorter than this (chars) */
-const LOOKS_LIKE_JS_MAX_CONTENT = 2000;
+import { findConverter } from './content-converter';
 
 export class Downloader {
 	private readonly imageHandler: ImageHandler;
@@ -35,254 +25,102 @@ export class Downloader {
 	}
 
 	/**
-	 * 处理单个 URL：下载 HTML → defuddle 解析 → 下载图片 → 保存 .md
-	 * Process a single URL: download HTML → defuddle parse → download images → save .md
+	 * 处理单个 URL：headless BrowserWindow 获取渲染 HTML → defuddle 解析 → 保存 .md
+	 * Process a single URL: headless BrowserWindow → defuddle parse → save .md
 	 *
-	 * 回退策略（参考 ima-copilot-sync）/ Fallback strategy (based on ima-copilot-sync):
-	 *   Tier 1: Node.js https/http.get 获取静态 HTML → defuddle 解析
-	 *   Tier 2: headless Electron BrowserWindow 重新抓取 JS 渲染后的 HTML → defuddle 再解析
+	 * 图片由 defuddle 在原文位置提取。Headless BrowserWindow 内嵌真实 Chromium，
+	 * WeChat 返回的 HTML 中 img.src 直接是真实 URL，无需 data-src→src 转换。
 	 *
-	 * Headless 触发条件 / Headless trigger conditions:
-	 *   - contentTooShort: 提取内容 < 120 字符
-	 *   - hasOrphanImages: 原始 HTML 有 <img> 但 Markdown 没图
-	 *   - looksLikeJsPage: HTML > 500KB 但提取内容 < 2000 字符
-	 *   - noWeChatContent: 微信页面静态 HTML 不含内容容器（反爬/验证页）
-	 *
-	 * @param url 目标 URL / Target URL
-	 * @param stsId 队列条目 UUID，写入 frontmatter / Queue entry UUID, written to frontmatter
+	 * Images extracted by defuddle in their original positions. Headless BrowserWindow
+	 * uses real Chromium; WeChat returns HTML with img.src as real URLs.
 	 */
 	async processUrl(url: string, stsId: string): Promise<ProcessResult> {
-		// 剥离微信追踪参数，避免反爬拦截 / Strip WeChat tracking params to avoid anti-crawl
+		// 剥离微信追踪参数 / Strip WeChat tracking params
 		const cleanUrl = Downloader.stripWeChatTrackingParams(url);
 
-		// 1. Tier 1: 下载静态 HTML / Tier 1: download static HTML
-		const html = await this.fetchHtml(cleanUrl);
-
-		// 2. defuddle 解析 / Parse with defuddle
-		let parsed = this.parseWithDefuddle(html, cleanUrl);
-
-		// 3. Tier 2: headless 判定 / Tier 2: headless decision
-		const contentLen = (parsed.content || '').length;
-		const contentTooShort = contentLen < MIN_CONTENT_LENGTH;
-
-		const htmlHasImgs = /<img[^>]+src=["']https?:\/\//i.test(html);
-		const mdHasImages = /!\[.*\]\(https?:\/\//.test(parsed.content || '');
-		const hasOrphanImages = htmlHasImgs && !mdHasImages;
-
-		const looksLikeJsPage = html.length > LOOKS_LIKE_JS_HTML_SIZE && contentLen < LOOKS_LIKE_JS_MAX_CONTENT;
-
-		const isWeChatPage = /mp\.weixin\.qq\.com/.test(url);
-		const noWeChatContent = isWeChatPage && !HeadlessExtractor.hasWeChatContent(html);
-
-		if (contentTooShort || hasOrphanImages || looksLikeJsPage || noWeChatContent) {
-			const renderedHtml = await this.headlessExtractor.extractRenderedHtml(cleanUrl);
-			if (renderedHtml && HeadlessExtractor.hasWeChatContent(renderedHtml)) {
-				const reParsed = this.parseWithDefuddle(renderedHtml, cleanUrl);
-				if ((reParsed.content || '').length > contentLen) {
-					parsed = reParsed;
-				}
-			}
+		// headless BrowserWindow 获取渲染 HTML / Get rendered HTML via headless BrowserWindow
+		const html = await this.headlessExtractor.extractRenderedHtml(cleanUrl);
+		if (!html) {
+			return { success: false, error: '无法获取页面内容 / Failed to fetch page content' };
 		}
 
-		// 4. 生成安全文件名 / Generate safe filename
-		const safeTitle = this.sanitizeNoteTitle(parsed.title || 'Untitled');
+		// DOMParser 解析 / Parse with DOMParser
+		const parser = new DOMParser();
+		const doc = parser.parseFromString(html, 'text/html');
+
+		// 元数据：defuddle 统一提取 / Metadata: always from defuddle
+		const metadata = this.extractMetadata(doc, cleanUrl);
+
+		// 内容：分平台转换 / Content: platform-specific conversion
+		const converter = findConverter(cleanUrl);
+		let content: string;
+		let imageUrls: string[];
+
+		if (converter) {
+			// 有平台转换器 → Turndown 转换 / Has converter → Turndown
+			content = converter.convert(doc, cleanUrl);
+			imageUrls = this.extractImageUrls(content);
+		} else {
+			// 通用网页 → defuddle 全量解析 / Generic page → full defuddle
+			const parsed = this.parseWithDefuddle(doc, cleanUrl);
+			content = parsed.content;
+			imageUrls = parsed.imageUrls;
+		}
+
+		// 生成安全文件名 / Generate safe filename
+		const safeTitle = this.sanitizeNoteTitle(metadata.title || 'Untitled');
 		const notePath = normalizePath(`${this.settings.outputFolder}/${safeTitle}.md`);
 
-		// 5. 构建 frontmatter + Markdown body / Build frontmatter + Markdown body
-		const frontmatter = this.buildFrontmatter(parsed, url, stsId);
-		let mdContent = frontmatter + '\n' + parsed.content;
+		// 构建 frontmatter + Markdown body / Build frontmatter + Markdown body
+		const frontmatter = this.buildFrontmatter(
+			{ ...metadata, content, imageUrls },
+			url,
+			stsId,
+		);
+		let mdContent = frontmatter + '\n' + content;
 
-		// 6. 处理图片/附件 / Process images/attachments
+		// 处理图片/附件 / Process images/attachments
 		mdContent = await this.imageHandler.processContent(mdContent, safeTitle);
 
-		// 7. 确保输出目录存在 / Ensure output directory exists
+		// 确保输出目录存在 / Ensure output directory exists
 		const dirExists = await this.vault.adapter.exists(this.settings.outputFolder);
 		if (!dirExists) {
 			await this.vault.createFolder(this.settings.outputFolder);
 		}
 
-		// 8. 写入 .md 文件 / Write .md file
+		// 写入 .md 文件 / Write .md file
 		await this.vault.create(notePath, mdContent);
 
 		return { success: true, title: safeTitle };
 	}
 
 	/**
-	 * 获取网页 HTML：首选 requestUrl（Electron Chromium 网络栈），
-	 * 失败时回退 Node.js https.get（带 Chrome UA）
-	 *
-	 * Fetch webpage HTML: prefer requestUrl (Electron Chromium stack),
-	 * fallback to Node.js https.get (with Chrome UA)
-	 *
-	 * 参考 ima-copilot-sync sync-manager.ts syncWebContent
-	 * Based on ima-copilot-sync's sync-manager.ts syncWebContent
+	 * 用 defuddle 提取元数据（title/author/published），不取 content
+	 * Extract metadata only via defuddle (title/author/published), skip content
 	 */
-	private async fetchHtml(url: string): Promise<string> {
-		// Tier 1: requestUrl（Chromium 网络栈，真实浏览器 TLS 指纹）
-		// Tier 1: requestUrl (Chromium network stack, real browser TLS fingerprint)
-		try {
-			const response = await requestUrl({
-				url,
-				method: 'GET',
-				headers: {
-					'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-					'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
-				},
-				throw: false,
-			});
-
-			if (response.status < 400) {
-				return response.text;
-			}
-			throw new Error(`HTTP ${response.status}`);
-		} catch (requestUrlErr) {
-			// Tier 2: Node.js https.get 兜底（可设置自定义 UA）
-			// Tier 2: Node.js https.get fallback (can set custom UA)
-			const msg = requestUrlErr instanceof Error ? requestUrlErr.message : String(requestUrlErr);
-			// eslint-disable-next-line no-console
-			console.debug(`Share to Save: requestUrl 失败，尝试 Node.js 兜底 / requestUrl failed, trying Node.js fallback: ${msg}`);
-		}
-
-		// eslint-disable-next-line @typescript-eslint/no-require-imports
-		const zlib: typeof import('zlib') = require('zlib');
-		const parsedUrl = new URL(url);
-		const protocol = parsedUrl.protocol === 'http:' ? 'http' : 'https';
-		// eslint-disable-next-line @typescript-eslint/no-require-imports
-		const mod = require(protocol) as typeof import('https');
-
-		const html = await new Promise<string>((resolve, reject) => {
-			const doRequest = (reqUrl: string, redirectCount = 0): void => {
-				if (redirectCount > 10) {
-					reject(new Error('重定向次数过多 / Too many redirects'));
-					return;
-				}
-
-				const req = mod.get(reqUrl, {
-					headers: {
-						'User-Agent': CHROME_UA,
-						'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-						'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
-					},
-				}, (res) => {
-					if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-						doRequest(res.headers.location, redirectCount + 1);
-						return;
-					}
-					if (!res.statusCode || res.statusCode >= 400) {
-						reject(new Error(`HTTP ${res.statusCode} for ${url}`));
-						return;
-					}
-
-					const chunks: Buffer[] = [];
-					const encoding = res.headers['content-encoding'];
-
-					let stream: import('stream').Readable = res;
-					if (encoding === 'gzip') {
-						stream = res.pipe(zlib.createGunzip());
-					} else if (encoding === 'deflate') {
-						stream = res.pipe(zlib.createInflate());
-					}
-
-					stream.on('data', (chunk: Buffer) => chunks.push(chunk));
-					stream.on('end', () => {
-						const buffer = Buffer.concat(chunks);
-						let text = buffer.toString('utf-8');
-						const charsetMatch = text.match(/<meta[^>]+charset\s*=\s*["']?([^"'\s>]+)/i);
-						if (charsetMatch && charsetMatch[1]) {
-							const detectedCharset = charsetMatch[1].toLowerCase();
-							if (detectedCharset !== 'utf-8' && detectedCharset !== 'utf8') {
-								try {
-									text = buffer.toString(detectedCharset as BufferEncoding);
-								} catch {
-									// 回退到 utf-8 / Fallback to utf-8
-								}
-							}
-						}
-						resolve(text);
-					});
-					stream.on('error', reject);
-				});
-				req.on('error', reject);
-				req.setTimeout(30_000, () => {
-					req.destroy();
-					reject(new Error('下载超时 / Download timeout'));
-				});
-			};
-			doRequest(url);
-		});
-
-		return html;
-	}
-
-	/**
-	 * 根据 URL 确定 defuddle 的 contentSelector 参数
-	 * Determine defuddle contentSelector based on URL
-	 */
-	private getContentSelector(url: string): string | undefined {
-		if (/mp\.weixin\.qq\.com/.test(url)) {
-			return '#js_content';
-		}
-		return undefined;
-	}
-
-	/**
-	 * 调用 defuddle/full 解析 HTML → Markdown
-	 * Parse HTML → Markdown via defuddle/full (browser API, DOMParser)
-	 *
-	 * 参考 ima-copilot-sync html-to-md.ts + all-in-obs article-service.ts
-	 * 关键：传入 defuddle 前将 data-src 复制到 src，
-	 * 使 defuddle 能"看见"懒加载图片（WeChat 用 data-src 存真实 URL）
-	 *
-	 * Key: copy data-src to src before passing to defuddle,
-	 * so defuddle can "see" lazy-loaded images (WeChat puts real URLs in data-src)
-	 */
-	private parseWithDefuddle(html: string, url: string): ParsedContent {
-		// 将 data-src 替换为 src，使 defuddle 能提取懒加载图片
-		// WeChat 图片用 data-src 存真实 URL，src 为空或占位图
-		// 直接在 HTML 字符串上替换，确保 DOMParser 解析后 img.src 就是真实 URL
-		// Replace data-src with src so defuddle can extract lazy-loaded images
-		// WeChat images store real URLs in data-src; src is empty or placeholder
-		// Replace in raw HTML string to guarantee img.src resolves correctly after DOMParser
-		const fixedHtml = html.replace(
-			/<img\b[^>]*?\bdata-src=(["'])(https?:\/\/[^"']+)\1[^>]*?\/?>/gi,
-			(match: string) => {
-				// 提取 data-src URL，放入 src / Extract data-src URL, put into src
-				const dsMatch = match.match(/\bdata-src=(["'])(https?:\/\/[^"']+)\1/i);
-				if (!dsMatch || !dsMatch[2]) return match;
-				const url = dsMatch[2];
-				// 替换原 src（如 src=""）为真实 URL / Replace original src (e.g. src="") with real URL
-				return match.replace(/\bsrc=(["'])[^"']*\1/i, `src="${url}"`).replace(
-					/\bdata-src=(["'])https?:\/\/[^"']+\1/i,
-					`data-src="${url}"`,
-				);
-			},
-		);
-
-		const parser = new DOMParser();
-		const doc = parser.parseFromString(fixedHtml, 'text/html');
-
-		const defuddleOpts: DefuddleOptions = {
-			url,
-			markdown: true,
-			useAsync: false,
+	private extractMetadata(doc: Document, url: string): Omit<ParsedContent, 'content' | 'imageUrls'> {
+		const result = new Defuddle(doc, { url, markdown: false, useAsync: false }).parse();
+		return {
+			title: result.title || 'Untitled',
+			author: result.author || '',
+			authorUrl: result.authorUrl,
+			published: result.published || '',
 		};
+	}
 
-		const contentSelector = this.getContentSelector(url);
-		if (contentSelector) {
-			defuddleOpts.contentSelector = contentSelector;
-		}
-
-		const result = new Defuddle(doc, defuddleOpts).parse();
+	/**
+	 * defuddle 全量解析（通用网页路径）/ Full defuddle parse (generic page path)
+	 */
+	private parseWithDefuddle(doc: Document, url: string): ParsedContent {
+		const result = new Defuddle(doc, { url, markdown: true, useAsync: false }).parse();
 		const markdown = result.content ?? '';
-		const imageUrls = this.extractImageUrls(markdown);
-
 		return {
 			title: result.title || 'Untitled',
 			author: result.author || '',
 			authorUrl: result.authorUrl,
 			published: result.published || '',
 			content: markdown,
-			imageUrls,
+			imageUrls: this.extractImageUrls(markdown),
 		};
 	}
 
