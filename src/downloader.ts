@@ -9,7 +9,7 @@ import { Vault, normalizePath } from 'obsidian';
 import type { ParsedContent, ProcessResult, ShareToSaveSettings } from './types';
 import { ImageHandler } from './image-handler';
 import Defuddle from 'defuddle/full';
-import type { DefuddleOptions, DefuddleResponse } from 'defuddle/full';
+import type { DefuddleOptions } from 'defuddle/full';
 import { HeadlessExtractor } from './headless-extractor';
 
 /** Chrome UA for Node.js https — 与 ima-copilot-sync 完全一致 / Chrome UA — identical to ima-copilot-sync */
@@ -72,23 +72,10 @@ export class Downloader {
 		const looksLikeJsPage = html.length > LOOKS_LIKE_JS_HTML_SIZE && contentLen < LOOKS_LIKE_JS_MAX_CONTENT;
 
 		if (contentTooShort || hasOrphanImages || looksLikeJsPage) {
-			// eslint-disable-next-line no-console
-			console.warn(
-				`Share to Save: 静态 HTML 内容不足 ` +
-				`(text=${contentLen}chars, htmlSize=${html.length}, hasImgs=${htmlHasImgs}, mdHasImgs=${mdHasImages})，` +
-				`尝试 headless / Static HTML insufficient, trying headless`,
-			);
 			const renderedHtml = await this.headlessExtractor.extractRenderedHtml(url);
 			if (renderedHtml && HeadlessExtractor.hasWeChatContent(renderedHtml)) {
 				const reParsed = this.parseWithDefuddle(renderedHtml, url);
-				// 仅当 headless 结果更好时才替换 / Only replace if headless result is better
 				if ((reParsed.content || '').length > contentLen) {
-					// eslint-disable-next-line no-console
-					console.warn(
-						`Share to Save: Headless 成功 ` +
-						`(content: ${contentLen} → ${(reParsed.content || '').length} chars) / ` +
-						`Headless succeeded`,
-					);
 					parsed = reParsed;
 				}
 			}
@@ -240,7 +227,7 @@ export class Downloader {
 		return {
 			title: result.title || 'Untitled',
 			author: result.author || '',
-			authorUrl: (result as DefuddleResponse & { authorUrl?: string }).authorUrl,
+			authorUrl: result.authorUrl,
 			published: result.published || '',
 			content: markdown,
 			imageUrls,
