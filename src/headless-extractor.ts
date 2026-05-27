@@ -177,6 +177,16 @@ export class HeadlessExtractor {
 			await new Promise(r => setTimeout(r, CONTENT_POLL_INTERVAL_MS));
 		}
 
+		// 触发懒加载图片：滚动到底部再回顶部 / Trigger lazy images: scroll to bottom then back to top
+		try {
+			await win.webContents.executeJavaScript('window.scrollTo(0, document.body.scrollHeight)');
+			await new Promise(r => setTimeout(r, 2000));
+			await win.webContents.executeJavaScript('window.scrollTo(0, 0)');
+			await new Promise(r => setTimeout(r, 500));
+		} catch {
+			// 滚动失败不影响提取 / Scroll failure doesn't block extraction
+		}
+
 		try {
 			const html: string = await win.webContents.executeJavaScript(
 				'document.documentElement.outerHTML',
