@@ -46,6 +46,7 @@ export class Downloader {
 	 *   - contentTooShort: 提取内容 < 120 字符
 	 *   - hasOrphanImages: 原始 HTML 有 <img> 但 Markdown 没图
 	 *   - looksLikeJsPage: HTML > 500KB 但提取内容 < 2000 字符
+	 *   - noWeChatContent: 微信页面静态 HTML 不含内容容器（反爬/验证页）
 	 *
 	 * @param url 目标 URL / Target URL
 	 * @param stsId 队列条目 UUID，写入 frontmatter / Queue entry UUID, written to frontmatter
@@ -64,18 +65,12 @@ export class Downloader {
 		const contentLen = (parsed.content || '').length;
 		const contentTooShort = contentLen < MIN_CONTENT_LENGTH;
 
-		// HTML 含 <img> 但 Markdown 没图 → 图片由 JS 加载，需 headless
-		// HTML has <img> but Markdown has no images → images loaded by JS, need headless
 		const htmlHasImgs = /<img[^>]+src=["']https?:\/\//i.test(html);
 		const mdHasImages = /!\[.*\]\(https?:\/\//.test(parsed.content || '');
 		const hasOrphanImages = htmlHasImgs && !mdHasImages;
 
-		// HTML 很大（>500KB JS）但提取内容很短（<2000 chars）→ JS 渲染空壳
-		// Large HTML (>500KB JS) but short content (<2000 chars) → JS-rendered shell
 		const looksLikeJsPage = html.length > LOOKS_LIKE_JS_HTML_SIZE && contentLen < LOOKS_LIKE_JS_MAX_CONTENT;
 
-		// 微信页面：静态 HTML 不含任何已知内容容器 → 反爬/验证页面，需 headless
-		// WeChat page: static HTML lacks any known content container → anti-crawl/verify page, need headless
 		const isWeChatPage = /mp\.weixin\.qq\.com/.test(url);
 		const noWeChatContent = isWeChatPage && !HeadlessExtractor.hasWeChatContent(html);
 
@@ -192,9 +187,6 @@ export class Downloader {
 	/**
 	 * 根据 URL 确定 defuddle 的 contentSelector 参数
 	 * Determine defuddle contentSelector based on URL
-	 *
-	 * 特定网站指定内容容器选择器，避免 defuddle 在整页中提取出 JS/UI 残渣
-	 * Specify content container selector for specific sites to prevent JS/UI artifacts in extraction
 	 */
 	private getContentSelector(url: string): string | undefined {
 		if (/mp\.weixin\.qq\.com/.test(url)) {
@@ -207,13 +199,27 @@ export class Downloader {
 	 * 调用 defuddle/full 解析 HTML → Markdown
 	 * Parse HTML → Markdown via defuddle/full (browser API, DOMParser)
 	 *
-	 * 参考 ima-copilot-sync html-to-md.ts 实现 / Based on ima-copilot-sync's html-to-md.ts
-	 * 关键：使用 DOMParser（Electron 原生）解析 HTML，而非 linkedom（会因复杂 HTML 失败）
-	 * Key: use DOMParser (Electron native) to parse HTML, not linkedom (fails on complex HTML)
+	 * 参考 ima-copilot-sync html-to-md.ts + all-in-obs article-service.ts
+	 * 关键：传入 defuddle 前将 data-src 复制到 src，
+	 * 使 defuddle 能"看见"懒加载图片（WeChat 用 data-src 存真实 URL）
+	 *
+	 * Key: copy data-src to src before passing to defuddle,
+	 * so defuddle can "see" lazy-loaded images (WeChat puts real URLs in data-src)
 	 */
 	private parseWithDefuddle(html: string, url: string): ParsedContent {
 		const parser = new DOMParser();
 		const doc = parser.parseFromString(html, 'text/html');
+
+		// 将 data-src 复制到 src，使 defuddle 能提取懒加载图片
+		// Copy data-src to src so defuddle can extract lazy-loaded images
+		// 不判断 img.src 是否为空——浏览器可能将 src="" 解析为非空 base URI
+		// Don't check img.src — browser may resolve empty src="" to a non-empty base URI
+		doc.querySelectorAll('img').forEach(img => {
+			const dataSrc = img.getAttribute('data-src');
+			if (dataSrc) {
+				img.setAttribute('src', dataSrc);
+			}
+		});
 
 		const defuddleOpts: DefuddleOptions = {
 			url,
@@ -227,16 +233,7 @@ export class Downloader {
 		}
 
 		const result = new Defuddle(doc, defuddleOpts).parse();
-
-		let markdown = result.content ?? '';
-
-		// 补充提取 defuddle 遗漏的图片（参考 extractWeChatImages）
-		// Supplementary image extraction for images defuddle missed
-		const supplementaryImages = this.extractSupplementaryImages(html, doc, markdown);
-		if (supplementaryImages) {
-			markdown = markdown.trimEnd() + '\n' + supplementaryImages;
-		}
-
+		const markdown = result.content ?? '';
 		const imageUrls = this.extractImageUrls(markdown);
 
 		return {
@@ -247,120 +244,6 @@ export class Downloader {
 			content: markdown,
 			imageUrls,
 		};
-	}
-
-	/**
-	 * 标准化图片 URL 用于去重（去除查询参数，统一子域名）
-	 * Normalize image URL for dedup (strip query params, normalize subdomain)
-	 *
-	 * 参考 ima-copilot-sync html-to-md.ts normalizeImgUrl
-	 * Based on ima-copilot-sync's html-to-md.ts normalizeImgUrl
-	 */
-	/**
-	 * 从 URL 提取图片唯一标识（用于跨 CDN 去重）
-	 * Extract image unique ID from URL (for cross-CDN dedup)
-	 *
-	 * WeChat mmbiz URL 结构 / structure: .../mmbiz_jpg/{hash}/0?wx_fmt=jpeg
-	 * sz_mmbiz_jpg vs mmbiz_png 等子域名变体共享同一 hash → 取倒数第二段去重
-	 * sz_mmbiz_jpg vs mmbiz_png variants share the same hash → use second-to-last segment
-	 */
-	private stableNameFromUrl(url: string): string {
-		try {
-			const urlObj = new URL(url);
-			const segments = urlObj.pathname.split('/').filter(s => s.length > 0);
-			if (segments.length < 2) return '';
-			// 末尾段是纯数字（如 /0）→ 取倒数第二段 / Last segment is numeric (e.g. /0) → use second-to-last
-			const last = segments[segments.length - 1] ?? '';
-			const id = /^\d+$/.test(last) && segments.length >= 2
-				? segments[segments.length - 2]
-				: last;
-			return id ?? '';
-		} catch {
-			return '';
-		}
-	}
-
-	private normalizeImgUrl(url: string): string {
-		try {
-			const u = new URL(url);
-			return u.origin + u.pathname;
-		} catch {
-			const idx = url.indexOf('?');
-			return idx >= 0 ? url.substring(0, idx) : url;
-		}
-	}
-
-	/**
-	 * 补充提取 HTML 中 defuddle 遗漏的图片（用于 data-src 懒加载、cdn_url 等模式）
-	 * Supplementary image extraction for images defuddle missed (data-src, cdn_url, etc.)
-	 *
-	 * 参考 ima-copilot-sync html-to-md.ts extractWeChatImages / Based on ima-copilot-sync's extractWeChatImages
-	 */
-	private extractSupplementaryImages(html: string, doc: Document, existingContent: string): string {
-		const seen = new Set<string>();
-		const seenNormalized = new Set<string>();
-		// 文件名去重：同一 stable filename → 同一张图 / Filename dedup: same stable filename → same image
-		const seenFilenames = new Set<string>();
-		const parts: string[] = [];
-
-		// 先收集已有 Markdown 中的图片用于去重 / Collect existing images from Markdown for dedup
-		const mdImgRegex = /!\[.*\]\((https?:\/\/[^)]+)\)/g;
-		let mdMatch: RegExpExecArray | null;
-		while ((mdMatch = mdImgRegex.exec(existingContent)) !== null) {
-			if (mdMatch[1]) {
-				seen.add(mdMatch[1]);
-				seenNormalized.add(this.normalizeImgUrl(mdMatch[1]));
-				// 用 buildStableFilename 做跨 CDN 去重 / Cross-CDN dedup via stable filename
-				const existingStableName = this.stableNameFromUrl(mdMatch[1]);
-				if (existingStableName) seenFilenames.add(existingStableName);
-			}
-		}
-
-		// 全 DOM 搜索 img，优先 data-src（懒加载），回退 src
-		// Full DOM img search, prefer data-src (lazy loading), fallback to src
-		// from=appmsg 过滤推荐缩略图 / from=appmsg filter excludes recommendation thumbnails
-		for (const img of Array.from(doc.querySelectorAll('img'))) {
-			const imgUrl = img.getAttribute('data-src') || img.src;
-			if (!imgUrl || !/^https?:\/\//.test(imgUrl)) continue;
-			if (imgUrl.includes('pic_blank.gif')) continue;
-			if (imgUrl.includes('res.wx.qq.com/mmbizappmsg')) continue;
-			if (!imgUrl.includes('from=appmsg')) continue;
-			const normalized = this.normalizeImgUrl(imgUrl);
-			if (seen.has(imgUrl) || seenNormalized.has(normalized)) continue;
-			const stableName = this.stableNameFromUrl(imgUrl);
-			if (stableName && seenFilenames.has(stableName)) continue;
-			seen.add(imgUrl);
-			seenNormalized.add(normalized);
-			if (stableName) seenFilenames.add(stableName);
-			parts.push(`![${(img as HTMLImageElement).alt || ''}](${imgUrl})`);
-		}
-
-		// cdn_url 中含 from=appmsg 的正文图片（轮播隐藏图不在 DOM 中）
-		// Content images from cdn_url with from=appmsg (hidden swiper images not in DOM)
-		const cdnRegex = /cdn_url\s*:\s*['"](https?:\/\/[^'"]*?from=appmsg[^'"]*?)['"]/gi;
-		let cdnMatch: RegExpExecArray | null;
-		while ((cdnMatch = cdnRegex.exec(html)) !== null) {
-			const imgUrl = cdnMatch[1] as string;
-			const normalized = this.normalizeImgUrl(imgUrl);
-			if (seen.has(imgUrl) || seenNormalized.has(normalized)) continue;
-			seen.add(imgUrl);
-			seenNormalized.add(normalized);
-			parts.push(`![](${imgUrl})`);
-		}
-
-		// data-src 模式（HTML 源码级别，可能不在 DOM 中）/ data-src pattern (HTML source level, may not be in DOM)
-		const dataSrcRegex = /data-src="(https?:\/\/[^"]+?(?:mmbiz|qpic)[^"]*?(?:jpe?g|png|gif|webp)[^"]*?)"/gi;
-		let dsMatch: RegExpExecArray | null;
-		while ((dsMatch = dataSrcRegex.exec(html)) !== null) {
-			const imgUrl = dsMatch[1] as string;
-			if (imgUrl.includes('pic_blank.gif')) continue;
-			if (imgUrl.includes('res.wx.qq.com/mmbizappmsg')) continue;
-			if (seen.has(imgUrl)) continue;
-			seen.add(imgUrl);
-			parts.push(`![](${imgUrl})`);
-		}
-
-		return parts.length > 0 ? parts.join('\n') + '\n' : '';
 	}
 
 	/**
