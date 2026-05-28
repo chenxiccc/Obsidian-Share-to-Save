@@ -7,13 +7,25 @@
  */
 
 import TurndownService from 'turndown';
+import Defuddle from 'defuddle/full';
+import type { Metadata } from './metadata-extractor';
+
+// ─── 类型 / Types ──────────────────────────────────────────────────────────
+
+/** 内容转换结果 / Content conversion result */
+export interface ConvertResult {
+	/** Markdown 正文 / Markdown body */
+	markdown: string;
+	/** 平台可修正 MetadataExtractor 提取的元数据 / Platform can patch metadata from MetadataExtractor */
+	metadataPatch?: Partial<Metadata>;
+}
 
 // ─── 接口 / Interface ────────────────────────────────────────────────────────
 
 export interface ContentConverter {
 	readonly domainPattern: RegExp;
 	/** @param rawHtml 原始 HTML 字符串（用于提取 <script> 内 JSON 等 DOM 无法表达的内容） */
-	convert(doc: Document, url: string, rawHtml?: string): string;
+	convert(doc: Document, url: string, rawHtml?: string): ConvertResult;
 }
 
 // ─── 微信常量 / WeChat constants ─────────────────────────────────────────────
@@ -32,18 +44,45 @@ const SYSTEM_IMG = ['pic_blank.gif', 'res.wx.qq.com/mmbizappmsg'];
 class WeChatConverter implements ContentConverter {
 	readonly domainPattern = /mp\.weixin\.qq\.com/;
 
-	convert(doc: Document, _url: string, _rawHtml?: string): string {
-		const container = this.detectContainer(doc);
-		const containerHtml = container ? this.buildCleanHtml(container) : '';
-		let markdown = containerHtml ? this.getTurndown().turndown(containerHtml) : '';
+	convert(doc: Document, _url: string, _rawHtml?: string): ConvertResult {
+		const parts: string[] = [];
 
-		// 全页补充图片（部分微信模板图片在容器之外）
+		// 区域 1: #img_list（图片分享页 swiper 图片，在 #js_content 外面）
+		// Area 1: #img_list (image detail page swiper, outside #js_content)
+		const imgList = doc.getElementById('img_list');
+		if (imgList && imgList.querySelectorAll('img').length >= 2) {
+			const cleaned = this.buildCleanHtml(imgList);
+			const md = this.getTurndown().turndown(cleaned);
+			if (md.trim()) parts.push(md);
+		}
+
+		// 区域 2: #js_content（标准图文 + 图片分享页的文字描述）
+		// Area 2: #js_content (standard article + image detail page text)
+		const jsContent = doc.getElementById('js_content');
+		if (jsContent && (jsContent.textContent?.trim().length || 0) > 0) {
+			const cleaned = this.buildCleanHtml(jsContent);
+			const md = this.getTurndown().turndown(cleaned);
+			if (md.trim()) parts.push(md);
+		}
+
+		// 后备：都没找到 → 旧容器检测 / Fallback: neither found → old container detection
+		if (parts.length === 0) {
+			const container = this.detectContainer(doc);
+			if (container) {
+				const md = this.getTurndown().turndown(this.buildCleanHtml(container));
+				if (md.trim()) parts.push(md);
+			}
+		}
+
+		let markdown = parts.join('\n');
+		// 全页补充图片（最终安全网）/ Full page supplement (final safety net)
 		const outerHtml = doc.documentElement.outerHTML || '';
 		const supplement = this.supplementImages(doc, outerHtml, markdown);
 		if (supplement) {
 			markdown = markdown.trimEnd() + '\n' + supplement;
 		}
-		return this.cleanWhitespace(markdown);
+		markdown = this.cleanWhitespace(markdown);
+		return { markdown };
 	}
 
 	/**
@@ -86,12 +125,27 @@ class WeChatConverter implements ContentConverter {
 		return null;
 	}
 
-	/** 克隆容器、data-src→src、移除微信 UI → 构建最小 HTML */
+	/** 克隆容器、data-src→src（含 Swiper 父级提升）、移除微信 UI → 构建最小 HTML */
 	private buildCleanHtml(el: HTMLElement): string {
 		const clone = el.cloneNode(true) as HTMLElement;
+
+		// 1. <img data-src> → <img src> / Promote data-src on img elements
 		clone.querySelectorAll('img').forEach(img => {
 			const ds = img.getAttribute('data-src');
 			if (ds && !img.src) img.setAttribute('src', ds);
+		});
+
+		// 2. Swiper 懒加载：父级 <div data-src="真实URL"> → 子 <img src>
+		//    Swiper lazy load: parent <div data-src> → child <img src>
+		clone.querySelectorAll('[data-src]').forEach(el => {
+			if (el.tagName === 'IMG') return;
+			const ds = el.getAttribute('data-src');
+			if (!ds) return;
+			el.querySelectorAll('img').forEach(img => {
+				if (!img.getAttribute('src') || img.src.includes('pic_blank')) {
+					img.setAttribute('src', ds);
+				}
+			});
 		});
 
 		// 移除微信 UI 元素（赞赏弹窗、底部导航等）
@@ -136,20 +190,30 @@ class WeChatConverter implements ContentConverter {
 			if (m[1]) seen.add(m[1]);
 		}
 
-		// DOM <img> 扫描（优先 data-src），跳过容器内和 <a> 缩略图
-		// DOM <img> scan: prefer data-src, skip container-internal and <a> thumbnails
+		// DOM <img> 扫描（优先 data-src）/ DOM <img> scan: prefer data-src
 		for (const img of Array.from(doc.querySelectorAll('img'))) {
 			const url = img.getAttribute('data-src') || img.src;
 			if (!url || !/^https?:\/\//.test(url)) continue;
 			if (SYSTEM_IMG.some(f => url.includes(f))) continue;
 			if (!url.includes('from=appmsg')) continue;
-			// 容器内 → Turndown 已处理 / Inside container → Turndown already handled
-			if (img.closest('#js_content, .rich_media_content, .share_content_page')) continue;
-			// <a> 内 → 推荐缩略图或 linkedImage 已处理 / Inside <a> → thumbnail or linkedImage handled
+			// <a> 内 → 推荐缩略图 / Inside <a> → thumbnail
 			if (img.closest('a')) continue;
 			if (seen.has(url)) continue;
 			seen.add(url);
 			parts.push(`![${(img as HTMLImageElement).alt || ''}](${url})`);
+		}
+
+		// 父级 [data-src] 扫描：Swiper 懒加载图片 URL 在 <div data-src> 上
+		// Parent [data-src] scan: Swiper lazy image URLs on <div data-src>
+		for (const el of Array.from(doc.querySelectorAll('[data-src]'))) {
+			if (el.tagName === 'IMG') continue;
+			const url = el.getAttribute('data-src') || '';
+			if (!url || !/^https?:\/\//.test(url)) continue;
+			if (!url.includes('from=appmsg')) continue;
+			if (el.closest('a')) continue;
+			if (seen.has(url)) continue;
+			seen.add(url);
+			parts.push(`![](${url})`);
 		}
 
 		// cdn_url 正则：swiper 轮播隐藏图不在 DOM 中（参考 ima-copilot-sync 踩坑 #3/#8）
@@ -206,8 +270,8 @@ class WeChatConverter implements ContentConverter {
 			},
 		});
 
-		// 带图片的链接（推荐阅读缩略图等）：只输出文字链接，丢弃装饰性缩略图
-		// Linked images (recommended reading thumbnails etc.): output only text link, discard decorative thumbnail
+		// 带图片的链接：有文字 → 文字链接；无文字 → 保留图片（微信文章点击查看大图）
+		// Linked images: has text → text link; no text → keep image (WeChat click-to-enlarge)
 		td.addRule('linkedImage', {
 			filter: (node: HTMLElement) =>
 				node.nodeName.toLowerCase() === 'a' && node.querySelector('img') !== null,
@@ -215,11 +279,17 @@ class WeChatConverter implements ContentConverter {
 				const el = node as HTMLElement;
 				const href = el.getAttribute('href') || '';
 				const img = el.querySelector('img');
+				const imgUrl = img ? (img.getAttribute('data-src') || img.getAttribute('src') || '') : '';
 				const imgAlt = img ? ((img as HTMLImageElement).alt || '') : '';
 				const rawText = (el.textContent || '').trim();
 				const textOnly = rawText.replace(imgAlt, '').replace(/\s+/g, ' ').trim();
 				if (href && /^https?:\/\//.test(href) && textOnly) {
 					return `[${textOnly}](${href})`;
+				}
+				// 无文字说明 → 保留图片 / No text content → keep the image
+				if (imgUrl && /^https?:\/\//.test(imgUrl)) {
+					const alt = imgAlt.replace(/\s+/g, ' ').trim() || 'Image';
+					return `![${alt}](${imgUrl})`;
 				}
 				return '';
 			},
@@ -240,22 +310,22 @@ class WeChatConverter implements ContentConverter {
 class XiaohongshuConverter implements ContentConverter {
 	readonly domainPattern = /(?:www\.)?xiaohongshu\.com/;
 
-	convert(doc: Document, url: string, rawHtml?: string): string {
+	convert(doc: Document, url: string, rawHtml?: string): ConvertResult {
 		// 使用原始 HTML（DOMParser 序列化后 <script> 内容可能被修改）
 		// Use raw HTML (DOMParser serialization may modify <script> content)
 		const html = rawHtml || doc.documentElement.outerHTML || '';
 		const state = this.parseInitialState(html);
 		if (!state) {
-			return this.fallbackExtract(doc);
+			return { markdown: this.fallbackExtract(doc) };
 		}
 
 		const noteDetailMap = state?.note?.noteDetailMap;
-		if (!noteDetailMap) return this.fallbackExtract(doc);
+		if (!noteDetailMap) return { markdown: this.fallbackExtract(doc) };
 
 		const noteId = Object.keys(noteDetailMap)[0];
-		if (!noteId) return this.fallbackExtract(doc);
+		if (!noteId) return { markdown: this.fallbackExtract(doc) };
 		const note = noteDetailMap[noteId]?.note;
-		if (!note) return this.fallbackExtract(doc);
+		if (!note) return { markdown: this.fallbackExtract(doc) };
 
 		const parts: string[] = [];
 
@@ -290,7 +360,31 @@ class XiaohongshuConverter implements ContentConverter {
 			}
 		}
 
-		return parts.join('\n');
+		// 元数据修正：XHS 标题含 " - 小红书" 后缀需去除
+		//               authorUrl 可能是相对路径需补全域名
+		// Metadata patch: XHS title has " - 小红书" suffix, needs stripping
+		//                  authorUrl may be relative, needs domain prepended
+		const metadataPatch: Partial<Metadata> = {};
+
+		// 从 <title> 提取的标题含 " - 小红书" 后缀，除去
+		// Title from <title> has " - 小红书" suffix, strip it
+		const rawTitle = doc.querySelector('title')?.textContent?.trim() || '';
+		const cleanedTitle = rawTitle.replace(/\s*-\s*小红书\s*$/, '').trim();
+		if (cleanedTitle && cleanedTitle !== rawTitle) {
+			metadataPatch.title = cleanedTitle;
+		}
+
+		// authorUrl 补全域名 / Prepend domain to authorUrl
+		const authorEl = doc.querySelector('meta[property="article:author"]');
+		const authorUrl = authorEl?.getAttribute('content')?.trim();
+		if (authorUrl && authorUrl.startsWith('/')) {
+			metadataPatch.authorUrl = 'https://www.xiaohongshu.com' + authorUrl;
+		}
+
+		return {
+			markdown: parts.join('\n'),
+			metadataPatch: Object.keys(metadataPatch).length > 0 ? metadataPatch : undefined,
+		};
 	}
 
 	/**
@@ -331,6 +425,21 @@ class XiaohongshuConverter implements ContentConverter {
 	}
 }
 
+// ─── Defuddle 通用回退 / Defuddle Generic Fallback ───────────────────────────
+
+/**
+ * 无平台转换器匹配时，使用 defuddle 全量解析作为兜底
+ * When no platform converter matches, use defuddle full parse as fallback
+ */
+class DefuddleConverter implements ContentConverter {
+	readonly domainPattern = /.*/;
+
+	convert(doc: Document, url: string, _rawHtml?: string): ConvertResult {
+		const result = new Defuddle(doc, { url, markdown: true, useAsync: false }).parse();
+		return { markdown: result.content ?? '' };
+	}
+}
+
 // ─── 注册表 / Registry ───────────────────────────────────────────────────────
 
 const converters: ContentConverter[] = [
@@ -338,6 +447,13 @@ const converters: ContentConverter[] = [
 	new XiaohongshuConverter(),
 ];
 
-export function findConverter(url: string): ContentConverter | null {
-	return converters.find(c => c.domainPattern.test(url)) ?? null;
+/** Defuddle 通用回退，始终在注册表末尾作为兜底 / Defuddle generic fallback, always at end of registry */
+const defuddleFallback = new DefuddleConverter();
+
+/**
+ * 查找匹配的转换器，无匹配时返回 DefuddleConverter 兜底
+ * Find matching converter, returns DefuddleConverter fallback when no match
+ */
+export function findConverter(url: string): ContentConverter {
+	return converters.find(c => c.domainPattern.test(url)) ?? defuddleFallback;
 }

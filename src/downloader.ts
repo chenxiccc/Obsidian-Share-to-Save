@@ -1,6 +1,6 @@
 /**
- * URL 内容下载器：headless BrowserWindow 获取渲染 HTML → defuddle 解析 → 保存 .md
- * URL content downloader: headless BrowserWindow → defuddle parse → save .md
+ * URL 内容下载器：HTML 获取 → 元数据提取 → 平台转换 → 保存 .md
+ * URL content downloader: HTML acquisition → metadata extraction → platform conversion → save .md
  *
  * 仅在桌面端运行 / Desktop only
  */
@@ -8,10 +8,24 @@
 import { Vault, normalizePath } from 'obsidian';
 import type { ParsedContent, ProcessResult, ShareToSaveSettings } from './types';
 import { ImageHandler } from './image-handler';
-import Defuddle from 'defuddle/full';
 import { HeadlessExtractor } from './headless-extractor';
 import { findConverter } from './content-converter';
-import { isXiaohongshuUrl, fetchXhsHtml } from './xhs-extractor';
+import { MetadataExtractor } from './metadata-extractor';
+import type { Metadata } from './metadata-extractor';
+
+/** Chrome UA — Node.js https 获取和 headless BrowserWindow 共享 */
+const CHROME_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 15_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.7258.108 Safari/537.36';
+
+/** 最大重定向次数 / Maximum redirect hops */
+const MAX_REDIRECTS = 5;
+/** 请求超时（毫秒）/ Request timeout (ms) */
+const REQUEST_TIMEOUT_MS = 30_000;
+
+/** Node.js HTML 获取结果 / Node.js HTML fetch result */
+interface NodeFetchResult {
+	html: string;
+	canonicalUrl: string;
+}
 
 export class Downloader {
 	private readonly imageHandler: ImageHandler;
@@ -29,36 +43,60 @@ export class Downloader {
 	 * 处理单个 URL：获取 HTML → 统一管线 → 保存 .md
 	 * Process a single URL: acquire HTML → unified pipeline → save .md
 	 *
-	 * HTML 获取是唯一分叉点：XHS 走 Node.js https，其他走 headless BrowserWindow
-	 * HTML acquisition is the only branch point: XHS uses Node.js https, others use headless
+	 * HTML 获取策略 / HTML acquisition strategy:
+	 *   微信 → headless 直连（Node.js 大概率触发反爬，避免浪费请求）
+	 *   其他 → Node.js https 优先 → SSR/质量检测 → headless 兜底
+	 *
+	 *   WeChat → headless directly (Node.js likely triggers anti-crawl)
+	 *   Others → Node.js https first → SSR/quality check → headless fallback
 	 */
 	async processUrl(url: string, stsId: string): Promise<ProcessResult> {
-		// 剥离微信追踪参数 / Strip WeChat tracking params
 		const cleanUrl = Downloader.stripWeChatTrackingParams(url);
 
-		// ── HTML 获取（唯一分叉点）/ HTML acquisition (only branch point) ──
-		let html: string | null;
-		let canonicalUrl = cleanUrl;
-
-		if (isXiaohongshuUrl(cleanUrl)) {
-			// XHS: Node.js https 直接获取（SSR HTML 已包含完整数据）
-			// XHS: Node.js https direct fetch (SSR HTML contains all data)
-			const fetched = await fetchXhsHtml(cleanUrl);
-			if (!fetched) {
-				return { success: false, error: '无法获取小红书页面 / Failed to fetch XHS page' };
-			}
-			html = fetched.html;
-			canonicalUrl = fetched.canonicalUrl;
-		} else {
-			// headless BrowserWindow 获取渲染 HTML / Get rendered HTML via headless BrowserWindow
-			html = await this.headlessExtractor.extractRenderedHtml(cleanUrl);
-		}
+		const { html, canonicalUrl } = await this.acquireHtml(cleanUrl);
 
 		if (!html) {
 			return { success: false, error: '无法获取页面内容 / Failed to fetch page content' };
 		}
 
 		return this.processHtml(html, canonicalUrl, stsId);
+	}
+
+	/**
+	 * HTML 获取：根据 URL 选择策略
+	 * HTML acquisition: select strategy based on URL
+	 */
+	private async acquireHtml(url: string): Promise<{ html: string | null; canonicalUrl: string }> {
+		// 微信：直接 headless / WeChat: straight to headless
+		if (Downloader.isWeChatUrl(url)) {
+			const html = await this.headlessExtractor.extractRenderedHtml(url);
+			return { html, canonicalUrl: url };
+		}
+
+		// 其他：Node.js https 优先 / Others: Node.js https first
+		const fetched = await this.fetchHtmlViaNodeJs(url);
+
+		if (!fetched) {
+			// Node.js 失败 → headless 兜底 / Node.js failed → headless fallback
+			const html = await this.headlessExtractor.extractRenderedHtml(url);
+			return { html, canonicalUrl: url };
+		}
+
+		if (Downloader.hasSsrState(fetched.html)) {
+			// SSR 页面：保留原始 HTML（headless 可能丢失 __INITIAL_STATE__ 等数据）
+			// SSR page: keep raw HTML (headless may lose __INITIAL_STATE__ data)
+			return fetched;
+		}
+
+		if (Downloader.isQualityPoor(fetched.html)) {
+			// 质量差 → headless 兜底 / Poor quality → headless fallback
+			const fallback = await this.headlessExtractor.extractRenderedHtml(url);
+			if (fallback) {
+				return { html: fallback, canonicalUrl: url };
+			}
+		}
+
+		return fetched;
 	}
 
 	/**
@@ -73,37 +111,21 @@ export class Downloader {
 		const parser = new DOMParser();
 		const doc = parser.parseFromString(html, 'text/html');
 
-		// 元数据：defuddle 统一提取 / Metadata: always from defuddle
-		const metadata = this.extractMetadata(doc, url);
+		// 元数据：MetadataExtractor 统一提取 / Metadata: unified via MetadataExtractor
+		const metadata = MetadataExtractor.extract(doc);
 
-		// XHS: defuddle 从 <title> 提取的标题含 " - 小红书" 后缀，去除
-		//      authorUrl 可能是相对路径（/user/profile/xxx），补全域名
-		// XHS: defuddle extracts title from <title> with " - 小红书" suffix, strip it
-		//      authorUrl may be relative (/user/profile/xxx), prepend domain
-		if (isXiaohongshuUrl(url)) {
-			metadata.title = metadata.title.replace(/\s*-\s*小红书\s*$/, '').trim() || metadata.title;
-			if (metadata.authorUrl && metadata.authorUrl.startsWith('/')) {
-				metadata.authorUrl = 'https://www.xiaohongshu.com' + metadata.authorUrl;
-			}
-		}
-
-		// 内容：分平台转换 / Content: platform-specific conversion
+		// 内容：分平台转换（findConverter 始终返回 converter，含 DefuddleConverter 兜底）
+		// Content: platform-specific conversion (findConverter always returns a converter)
 		const converter = findConverter(url);
-		let content: string;
-		let imageUrls: string[];
+		const result = converter.convert(doc, url, html);
 
-		if (converter) {
-			// 有平台转换器 → 转换 / Has converter → convert
-			content = converter.convert(doc, url, html);
-			imageUrls = this.extractImageUrls(content);
-		} else {
-			// 通用网页 → defuddle 全量解析 / Generic page → full defuddle
-			const parsed = this.parseWithDefuddle(doc, url);
-			content = parsed.content;
-			imageUrls = parsed.imageUrls;
-		}
+		// 应用平台元数据修正 / Apply platform metadata patches
+		Downloader.applyMetadataPatch(metadata, result.metadataPatch);
 
-		return this.saveNote({ ...metadata, content, imageUrls }, url, stsId);
+		// 图片 URL 提取 / Extract image URLs from markdown
+		const imageUrls = Downloader.extractImageUrls(result.markdown);
+
+		return this.saveNote({ ...metadata, content: result.markdown, imageUrls }, url, stsId);
 	}
 
 	/**
@@ -111,64 +133,168 @@ export class Downloader {
 	 * Unified downstream save: sanitize → frontmatter → images → vault
 	 */
 	private async saveNote(parsed: ParsedContent, sourceUrl: string, stsId: string): Promise<ProcessResult> {
-		// 生成安全文件名 / Generate safe filename
-		const safeTitle = this.sanitizeNoteTitle(parsed.title || 'Untitled');
+		const safeTitle = Downloader.sanitizeNoteTitle(parsed.title || 'Untitled');
 		const notePath = normalizePath(`${this.settings.outputFolder}/${safeTitle}.md`);
 
-		// 构建 frontmatter + Markdown body / Build frontmatter + Markdown body
-		const frontmatter = this.buildFrontmatter(parsed, sourceUrl, stsId);
+		const frontmatter = Downloader.buildFrontmatter(parsed, sourceUrl, stsId);
 		let mdContent = frontmatter + '\n' + parsed.content;
 
-		// 处理图片/附件 / Process images/attachments
 		mdContent = await this.imageHandler.processContent(mdContent, safeTitle);
 
-		// 确保输出目录存在 / Ensure output directory exists
 		const dirExists = await this.vault.adapter.exists(this.settings.outputFolder);
 		if (!dirExists) {
 			await this.vault.createFolder(this.settings.outputFolder);
 		}
 
-		// 写入 .md 文件 / Write .md file
 		await this.vault.create(notePath, mdContent);
 
 		return { success: true, title: safeTitle };
 	}
 
 	/**
-	 * 用 defuddle 提取元数据（title/author/published），不取 content
-	 * Extract metadata only via defuddle (title/author/published), skip content
+	 * 应用平台提供的元数据修正（如 XHS 标题去" - 小红书"后缀）
+	 * Apply platform-provided metadata patches (e.g. XHS title suffix removal)
 	 */
-	private extractMetadata(doc: Document, url: string): Omit<ParsedContent, 'content' | 'imageUrls'> {
-		const result = new Defuddle(doc, { url, markdown: false, useAsync: false }).parse();
-		return {
-			title: result.title || 'Untitled',
-			author: result.author || '',
-			authorUrl: result.authorUrl,
-			published: result.published || '',
-		};
+	private static applyMetadataPatch(metadata: Metadata, patch?: Partial<Metadata>): void {
+		if (!patch) return;
+		if (patch.title) metadata.title = patch.title;
+		if (patch.author) metadata.author = patch.author;
+		if (patch.authorUrl !== undefined) metadata.authorUrl = patch.authorUrl;
+		if (patch.published) metadata.published = patch.published;
+	}
+
+	// ── Node.js https HTML 获取 / Node.js https HTML Fetch ──────────────────
+
+	/**
+	 * 通过 Node.js https 获取页面 HTML
+	 * Fetch page HTML via Node.js https
+	 *
+	 * 小红书需要特定 Referer 绕过防盗链，其他页面使用 origin 即可
+	 * XHS needs specific Referer for anti-hotlink; others use origin
+	 */
+	private fetchHtmlViaNodeJs(url: string): Promise<NodeFetchResult | null> {
+		const isXhs = /xiaohongshu\.com|xhslink\.com/i.test(url);
+		const referer = isXhs ? 'https://www.xiaohongshu.com/' : new URL(url).origin;
+		return this.doNodeFetch(url, 0, referer);
 	}
 
 	/**
-	 * defuddle 全量解析（通用网页路径）/ Full defuddle parse (generic page path)
+	 * 递归获取 HTML，跟踪重定向 / Recursively fetch HTML, following redirects
 	 */
-	private parseWithDefuddle(doc: Document, url: string): ParsedContent {
-		const result = new Defuddle(doc, { url, markdown: true, useAsync: false }).parse();
-		const markdown = result.content ?? '';
-		return {
-			title: result.title || 'Untitled',
-			author: result.author || '',
-			authorUrl: result.authorUrl,
-			published: result.published || '',
-			content: markdown,
-			imageUrls: this.extractImageUrls(markdown),
-		};
+	private doNodeFetch(requestUrl: string, redirectCount: number, referer: string): Promise<NodeFetchResult | null> {
+		if (redirectCount >= MAX_REDIRECTS) return Promise.resolve(null);
+
+		const protocol = new URL(requestUrl).protocol === 'http:' ? 'http' : 'https';
+		// eslint-disable-next-line @typescript-eslint/no-require-imports
+		const mod = require(protocol) as typeof import('https');
+
+		return new Promise<NodeFetchResult | null>((resolve) => {
+			const req = mod.get(requestUrl, {
+				headers: {
+					'User-Agent': CHROME_UA,
+					'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+					'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+					'Referer': referer,
+				},
+			}, (res: import('http').IncomingMessage) => {
+				// 处理重定向 / Handle redirect
+				if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+					const redirectUrl = new URL(res.headers.location, requestUrl).toString();
+					res.resume();
+					this.doNodeFetch(redirectUrl, redirectCount + 1, referer).then(resolve);
+					return;
+				}
+
+				// 非 200 → 失败 / Non-200 → failure
+				if (!res.statusCode || res.statusCode >= 400) {
+					res.resume();
+					resolve(null);
+					return;
+				}
+
+				// 收集响应体 / Collect response body
+				const chunks: Buffer[] = [];
+				res.on('data', (chunk: Buffer) => chunks.push(chunk));
+				res.on('end', () => {
+					const htmlText = Buffer.concat(chunks).toString('utf-8');
+					const canonical = Downloader.extractCanonicalUrl(htmlText) || requestUrl;
+					resolve({ html: htmlText, canonicalUrl: canonical });
+				});
+				res.on('error', () => resolve(null));
+			});
+
+			req.on('error', () => resolve(null));
+			req.setTimeout(REQUEST_TIMEOUT_MS, () => {
+				req.destroy();
+				resolve(null);
+			});
+		});
 	}
+
+	/**
+	 * 从 HTML 中提取 canonical URL（og:url meta 标签）
+	 * Extract canonical URL from HTML (og:url meta tag)
+	 */
+	private static extractCanonicalUrl(html: string): string | null {
+		const match = html.match(/<meta[^>]*property="og:url"[^>]*content="([^"]*)"/i);
+		return match?.[1] ?? null;
+	}
+
+	// ── 质量与 SSR 检测 / Quality & SSR Detection ──────────────────────────
+
+	/**
+	 * 检测是否为微信 URL / Check if WeChat URL
+	 *
+	 * 唯一需要跳过 Node.js 直连 headless 的域名。
+	 * Only domain that needs to skip Node.js entirely.
+	 */
+	private static isWeChatUrl(url: string): boolean {
+		return /mp\.weixin\.qq\.com/.test(url);
+	}
+
+	/**
+	 * 检测 HTML 是否包含 SSR 状态数据
+	 * Detect if HTML contains SSR state data
+	 *
+	 * 有 SSR 状态的页面原始 HTML 包含完整数据（如 XHS 的 __INITIAL_STATE__），
+	 * headless 可能因 JS 执行而丢失这些数据。检测到后跳过 headless 兜底。
+	 */
+	private static hasSsrState(html: string): boolean {
+		return /window\.__INITIAL_STATE__\s*=|window\.__NUXT__\s*=|__NEXT_DATA__\s*=|window\.__DATA__\s*=/.test(html);
+	}
+
+	/**
+	 * 快速检测 HTML 内容质量是否过差（需要 headless 兜底）
+	 * Quick check if HTML content quality is too poor (needs headless fallback)
+	 */
+	private static isQualityPoor(html: string): boolean {
+		// 太小 → 空/错误页 / Too small → empty/error page
+		if (html.length < 500) return true;
+
+		// 去脚本/样式后的纯文本 / Plain text after removing scripts/styles
+		const text = html
+			.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+			.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+			.replace(/<[^>]+>/g, '')
+			.replace(/\s+/g, ' ')
+			.trim();
+
+		// 文本太短 → 无意义 / Text too short → meaningless
+		if (text.length < 100) return true;
+
+		// HTML 很大但文本很少 → SPA 空壳 / Large HTML but little text → SPA shell
+		if (html.length > 200_000 && text.length < 500) return true;
+
+		return false;
+	}
+
+	// ── 工具方法 / Utility Methods ──────────────────────────────────────────
 
 	/**
 	 * 从 Markdown 中提取所有外链图片 URL
 	 * Extract all external image URLs from Markdown
 	 */
-	private extractImageUrls(markdown: string): string[] {
+	static extractImageUrls(markdown: string): string[] {
 		const regex = /!\[[^\]]*\]\((https?:\/\/[^)\s]+)\)/g;
 		const urls: string[] = [];
 		let match: RegExpExecArray | null;
@@ -181,10 +307,9 @@ export class Downloader {
 	}
 
 	/**
-	 * 构建 YAML frontmatter
-	 * Build YAML frontmatter
+	 * 构建 YAML frontmatter / Build YAML frontmatter
 	 */
-	private buildFrontmatter(
+	static buildFrontmatter(
 		parsed: ParsedContent,
 		sourceUrl: string,
 		stsId: string,
@@ -203,7 +328,7 @@ export class Downloader {
 		}
 
 		if (parsed.published) {
-			const formatted = this.formatDateTime(parsed.published);
+			const formatted = Downloader.formatDateTime(parsed.published);
 			if (formatted) {
 				lines.push(`published: ${formatted}`);
 			}
@@ -218,7 +343,7 @@ export class Downloader {
 	 * 将各种日期格式统一为 YYYY-MM-DD 或 YYYY-MM-DDTHH:mm:ss
 	 * Normalize various date formats to YYYY-MM-DD or YYYY-MM-DDTHH:mm:ss
 	 */
-	private formatDateTime(input: string): string | null {
+	static formatDateTime(input: string): string | null {
 		if (!input) return null;
 		try {
 			const date = new Date(input);
@@ -235,7 +360,7 @@ export class Downloader {
 	/**
 	 * 清理笔记标题为安全文件名 / Sanitize note title for safe filename
 	 */
-	private sanitizeNoteTitle(title: string): string {
+	static sanitizeNoteTitle(title: string): string {
 		return title
 			.replace(/[/\\:*?"<>|#^[\]]/g, '_')
 			.replace(/\s+/g, ' ')

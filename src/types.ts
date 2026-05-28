@@ -27,7 +27,7 @@ export interface QueueEntry {
 /** tobesave.json 文件全量结构 / Full file structure */
 export type QueueFile = QueueEntry[];
 
-/** Defuddle 解析结果 / Defuddle parse result */
+/** 页面解析结果（元数据 + 正文 + 图片列表）/ Page parse result (metadata + body + image list) */
 export interface ParsedContent {
 	title: string;
 	author: string;

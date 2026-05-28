@@ -177,12 +177,12 @@ export class HeadlessExtractor {
 			await new Promise(r => setTimeout(r, CONTENT_POLL_INTERVAL_MS));
 		}
 
-		// 触发懒加载图片：滚动到底部再回顶部 / Trigger lazy images: scroll to bottom then back to top
+		// 触发基础懒加载（快速滚动，不等待——图片 URL 从 data-src 属性直接提取）
+		// Trigger basic lazy load (quick scroll, no wait — image URLs extracted from data-src attributes)
 		try {
 			await win.webContents.executeJavaScript('window.scrollTo(0, document.body.scrollHeight)');
-			await new Promise(r => setTimeout(r, 2000));
+			await new Promise(r => setTimeout(r, 300));
 			await win.webContents.executeJavaScript('window.scrollTo(0, 0)');
-			await new Promise(r => setTimeout(r, 500));
 		} catch {
 			// 滚动失败不影响提取 / Scroll failure doesn't block extraction
 		}
