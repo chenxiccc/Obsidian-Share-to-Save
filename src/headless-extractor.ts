@@ -9,9 +9,9 @@
  * Based on ima-copilot-sync's HeadlessExtractor implementation
  */
 
-const LOAD_TIMEOUT_MS = 20_000;
+const LOAD_TIMEOUT_MS = 30_000;
 const CONTENT_POLL_INTERVAL_MS = 500;
-const CONTENT_POLL_MAX_MS = 10_000;
+const CONTENT_POLL_MAX_MS = 20_000;
 const BROWSER_PARTITION = 'persist:share-to-save';
 
 /** Chrome UA — 与 ima-copilot-sync 一致 / Chrome UA — identical to ima-copilot-sync */

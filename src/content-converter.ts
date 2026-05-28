@@ -12,7 +12,8 @@ import TurndownService from 'turndown';
 
 export interface ContentConverter {
 	readonly domainPattern: RegExp;
-	convert(doc: Document, url: string): string;
+	/** @param rawHtml 原始 HTML 字符串（用于提取 <script> 内 JSON 等 DOM 无法表达的内容） */
+	convert(doc: Document, url: string, rawHtml?: string): string;
 }
 
 // ─── 微信常量 / WeChat constants ─────────────────────────────────────────────
@@ -31,7 +32,7 @@ const SYSTEM_IMG = ['pic_blank.gif', 'res.wx.qq.com/mmbizappmsg'];
 class WeChatConverter implements ContentConverter {
 	readonly domainPattern = /mp\.weixin\.qq\.com/;
 
-	convert(doc: Document, _url: string): string {
+	convert(doc: Document, _url: string, _rawHtml?: string): string {
 		const container = this.detectContainer(doc);
 		const containerHtml = container ? this.buildCleanHtml(container) : '';
 		let markdown = containerHtml ? this.getTurndown().turndown(containerHtml) : '';
@@ -234,11 +235,107 @@ class WeChatConverter implements ContentConverter {
 	}
 }
 
+// ─── 小红书转换器 / Xiaohongshu Converter ────────────────────────────────────
+
+class XiaohongshuConverter implements ContentConverter {
+	readonly domainPattern = /(?:www\.)?xiaohongshu\.com/;
+
+	convert(doc: Document, url: string, rawHtml?: string): string {
+		// 使用原始 HTML（DOMParser 序列化后 <script> 内容可能被修改）
+		// Use raw HTML (DOMParser serialization may modify <script> content)
+		const html = rawHtml || doc.documentElement.outerHTML || '';
+		const state = this.parseInitialState(html);
+		if (!state) {
+			return this.fallbackExtract(doc);
+		}
+
+		const noteDetailMap = state?.note?.noteDetailMap;
+		if (!noteDetailMap) return this.fallbackExtract(doc);
+
+		const noteId = Object.keys(noteDetailMap)[0];
+		if (!noteId) return this.fallbackExtract(doc);
+		const note = noteDetailMap[noteId]?.note;
+		if (!note) return this.fallbackExtract(doc);
+
+		const parts: string[] = [];
+
+		// 视频笔记标记 / Video note indicator
+		if (note.type === 'video') {
+			parts.push('> [!NOTE] 视频笔记 / Video Note\n');
+		}
+
+		// 正文（转义 # 防止 Obsidian 标签误识别）
+		// Content (escape # to prevent Obsidian tag misinterpretation)
+		const desc = note.desc;
+		if (desc) {
+			let text = Array.isArray(desc) ? desc.join('\n') : String(desc);
+			// 去除 XHS 话题标记 [话题]# / Remove XHS topic markers
+			text = text.replace(/\[话题\]#?/g, '');
+			// 转义行首和空格后的 #，避免被 Obsidian 识别为标签
+			// Escape # at line start or after space to prevent Obsidian tag recognition
+			text = text.replace(/(^|\s)#/g, '$1\\#');
+			parts.push(text);
+		}
+
+		// 图片（从 __INITIAL_STATE__ 提取，defuddle 看不到）
+		// Images (extracted from __INITIAL_STATE__, invisible to defuddle)
+		const images = note.imageList;
+		if (images && images.length > 0) {
+			parts.push('');
+			for (const img of images) {
+				const imgUrl = img.urlDefault || img.url;
+				if (imgUrl) {
+					parts.push(`![](${imgUrl})`);
+				}
+			}
+		}
+
+		return parts.join('\n');
+	}
+
+	/**
+	 * 解析 window.__INITIAL_STATE__ JSON
+	 * Parse window.__INITIAL_STATE__ JSON
+	 *
+	 * 正则 + lastIndexOf("}") 截断，与 all-in-obs / xiaohongshu-importer / ob-Plugin 一致
+	 * Regex + lastIndexOf("}") truncation, identical to all-in-obs / xiaohongshu-importer / ob-Plugin
+	 */
+	private parseInitialState(html: string): any | null {
+		const match = html.match(/window\.__INITIAL_STATE__\s*=\s*([\s\S]*?)<\/script>/i);
+		if (!match?.[1]) return null;
+		try {
+			let jsonStr = match[1].trim();
+			// 去掉末尾分号 / Strip trailing semicolon
+			jsonStr = jsonStr.replace(/;\s*$/, '');
+			// 取最后一个 } 截断，去掉 JSON 后的多余 JS 代码
+			// Truncate at last } to remove trailing JS code after JSON
+			const lastBrace = jsonStr.lastIndexOf('}');
+			if (lastBrace >= 0) {
+				jsonStr = jsonStr.slice(0, lastBrace + 1);
+			}
+			// 替换 JSON 中非法的 JS 字面量 / Replace illegal JS literals in JSON
+			const cleaned = jsonStr.replace(/undefined/g, 'null').replace(/\bNaN\b/g, 'null');
+			return JSON.parse(cleaned);
+		} catch {
+			return null;
+		}
+	}
+
+	/**
+	 * DOM 降级提取：当 __INITIAL_STATE__ 解析失败时使用 #detail-desc 选择器
+	 * DOM fallback extraction: use #detail-desc selector when __INITIAL_STATE__ parsing fails
+	 */
+	private fallbackExtract(doc: Document): string {
+		const descEl = doc.querySelector('#detail-desc');
+		return descEl?.textContent?.trim() || '';
+	}
+}
+
 // ─── 注册表 / Registry ───────────────────────────────────────────────────────
 
 const converters: ContentConverter[] = [
 	new WeChatConverter(),
-	// new XiaohongshuConverter(),  // 后续
+	new XiaohongshuConverter(),
 ];
 
 export function findConverter(url: string): ContentConverter | null {

@@ -11,6 +11,7 @@ import { ImageHandler } from './image-handler';
 import Defuddle from 'defuddle/full';
 import { HeadlessExtractor } from './headless-extractor';
 import { findConverter } from './content-converter';
+import { isXiaohongshuUrl, fetchXhsHtml } from './xhs-extractor';
 
 export class Downloader {
 	private readonly imageHandler: ImageHandler;
@@ -25,59 +26,98 @@ export class Downloader {
 	}
 
 	/**
-	 * 处理单个 URL：headless BrowserWindow 获取渲染 HTML → defuddle 解析 → 保存 .md
-	 * Process a single URL: headless BrowserWindow → defuddle parse → save .md
+	 * 处理单个 URL：获取 HTML → 统一管线 → 保存 .md
+	 * Process a single URL: acquire HTML → unified pipeline → save .md
 	 *
-	 * 图片由 defuddle 在原文位置提取。Headless BrowserWindow 内嵌真实 Chromium，
-	 * WeChat 返回的 HTML 中 img.src 直接是真实 URL，无需 data-src→src 转换。
-	 *
-	 * Images extracted by defuddle in their original positions. Headless BrowserWindow
-	 * uses real Chromium; WeChat returns HTML with img.src as real URLs.
+	 * HTML 获取是唯一分叉点：XHS 走 Node.js https，其他走 headless BrowserWindow
+	 * HTML acquisition is the only branch point: XHS uses Node.js https, others use headless
 	 */
 	async processUrl(url: string, stsId: string): Promise<ProcessResult> {
 		// 剥离微信追踪参数 / Strip WeChat tracking params
 		const cleanUrl = Downloader.stripWeChatTrackingParams(url);
 
-		// headless BrowserWindow 获取渲染 HTML / Get rendered HTML via headless BrowserWindow
-		const html = await this.headlessExtractor.extractRenderedHtml(cleanUrl);
+		// ── HTML 获取（唯一分叉点）/ HTML acquisition (only branch point) ──
+		let html: string | null;
+		let canonicalUrl = cleanUrl;
+
+		if (isXiaohongshuUrl(cleanUrl)) {
+			// XHS: Node.js https 直接获取（SSR HTML 已包含完整数据）
+			// XHS: Node.js https direct fetch (SSR HTML contains all data)
+			const fetched = await fetchXhsHtml(cleanUrl);
+			if (!fetched) {
+				return { success: false, error: '无法获取小红书页面 / Failed to fetch XHS page' };
+			}
+			html = fetched.html;
+			canonicalUrl = fetched.canonicalUrl;
+		} else {
+			// headless BrowserWindow 获取渲染 HTML / Get rendered HTML via headless BrowserWindow
+			html = await this.headlessExtractor.extractRenderedHtml(cleanUrl);
+		}
+
 		if (!html) {
 			return { success: false, error: '无法获取页面内容 / Failed to fetch page content' };
 		}
 
+		return this.processHtml(html, canonicalUrl, stsId);
+	}
+
+	/**
+	 * 统一管线：HTML → DOMParser → metadata → converter → saveNote
+	 * Unified pipeline: HTML → DOMParser → metadata → converter → saveNote
+	 *
+	 * 所有平台在 HTML 获取后共享此管线
+	 * All platforms share this pipeline after HTML acquisition
+	 */
+	private async processHtml(html: string, url: string, stsId: string): Promise<ProcessResult> {
 		// DOMParser 解析 / Parse with DOMParser
 		const parser = new DOMParser();
 		const doc = parser.parseFromString(html, 'text/html');
 
 		// 元数据：defuddle 统一提取 / Metadata: always from defuddle
-		const metadata = this.extractMetadata(doc, cleanUrl);
+		const metadata = this.extractMetadata(doc, url);
+
+		// XHS: defuddle 从 <title> 提取的标题含 " - 小红书" 后缀，去除
+		//      authorUrl 可能是相对路径（/user/profile/xxx），补全域名
+		// XHS: defuddle extracts title from <title> with " - 小红书" suffix, strip it
+		//      authorUrl may be relative (/user/profile/xxx), prepend domain
+		if (isXiaohongshuUrl(url)) {
+			metadata.title = metadata.title.replace(/\s*-\s*小红书\s*$/, '').trim() || metadata.title;
+			if (metadata.authorUrl && metadata.authorUrl.startsWith('/')) {
+				metadata.authorUrl = 'https://www.xiaohongshu.com' + metadata.authorUrl;
+			}
+		}
 
 		// 内容：分平台转换 / Content: platform-specific conversion
-		const converter = findConverter(cleanUrl);
+		const converter = findConverter(url);
 		let content: string;
 		let imageUrls: string[];
 
 		if (converter) {
-			// 有平台转换器 → Turndown 转换 / Has converter → Turndown
-			content = converter.convert(doc, cleanUrl);
+			// 有平台转换器 → 转换 / Has converter → convert
+			content = converter.convert(doc, url, html);
 			imageUrls = this.extractImageUrls(content);
 		} else {
 			// 通用网页 → defuddle 全量解析 / Generic page → full defuddle
-			const parsed = this.parseWithDefuddle(doc, cleanUrl);
+			const parsed = this.parseWithDefuddle(doc, url);
 			content = parsed.content;
 			imageUrls = parsed.imageUrls;
 		}
 
+		return this.saveNote({ ...metadata, content, imageUrls }, url, stsId);
+	}
+
+	/**
+	 * 统一下游保存逻辑：sanitize → frontmatter → images → vault
+	 * Unified downstream save: sanitize → frontmatter → images → vault
+	 */
+	private async saveNote(parsed: ParsedContent, sourceUrl: string, stsId: string): Promise<ProcessResult> {
 		// 生成安全文件名 / Generate safe filename
-		const safeTitle = this.sanitizeNoteTitle(metadata.title || 'Untitled');
+		const safeTitle = this.sanitizeNoteTitle(parsed.title || 'Untitled');
 		const notePath = normalizePath(`${this.settings.outputFolder}/${safeTitle}.md`);
 
 		// 构建 frontmatter + Markdown body / Build frontmatter + Markdown body
-		const frontmatter = this.buildFrontmatter(
-			{ ...metadata, content, imageUrls },
-			url,
-			stsId,
-		);
-		let mdContent = frontmatter + '\n' + content;
+		const frontmatter = this.buildFrontmatter(parsed, sourceUrl, stsId);
+		let mdContent = frontmatter + '\n' + parsed.content;
 
 		// 处理图片/附件 / Process images/attachments
 		mdContent = await this.imageHandler.processContent(mdContent, safeTitle);
