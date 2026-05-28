@@ -76,8 +76,7 @@ class WeChatConverter implements ContentConverter {
 
 		let markdown = parts.join('\n');
 		// 全页补充图片（最终安全网）/ Full page supplement (final safety net)
-		const outerHtml = doc.documentElement.outerHTML || '';
-		const supplement = this.supplementImages(doc, outerHtml, markdown);
+		const supplement = this.supplementImages(doc, markdown);
 		if (supplement) {
 			markdown = markdown.trimEnd() + '\n' + supplement;
 		}
@@ -179,7 +178,7 @@ class WeChatConverter implements ContentConverter {
 	 * - data-src 优先（懒加载），回退 src
 	 * - 已有 Markdown 图片去重
 	 */
-	private supplementImages(doc: Document, rawHtml: string, existingMarkdown: string): string {
+	private supplementImages(doc: Document, existingMarkdown: string): string {
 		const seen = new Set<string>();
 		const parts: string[] = [];
 
@@ -190,6 +189,16 @@ class WeChatConverter implements ContentConverter {
 			if (m[1]) seen.add(m[1]);
 		}
 
+		// URL 归一化（mmbiz.qpic.cn 去 query params 用于去重）
+		// URL normalization (strip query params for mmbiz.qpic.cn dedup)
+		const normalizeForDedup = (u: string): string => {
+			try {
+				const p = new URL(u);
+				if (p.hostname.endsWith('.qpic.cn')) return p.origin + p.pathname;
+			} catch { /* keep as-is */ }
+			return u;
+		};
+
 		// DOM <img> 扫描（优先 data-src）/ DOM <img> scan: prefer data-src
 		for (const img of Array.from(doc.querySelectorAll('img'))) {
 			const url = img.getAttribute('data-src') || img.src;
@@ -198,36 +207,10 @@ class WeChatConverter implements ContentConverter {
 			if (!url.includes('from=appmsg')) continue;
 			// <a> 内 → 推荐缩略图 / Inside <a> → thumbnail
 			if (img.closest('a')) continue;
-			if (seen.has(url)) continue;
-			seen.add(url);
+			if (seen.has(normalizeForDedup(url))) continue;
+			seen.add(normalizeForDedup(url));
 			parts.push(`![${(img as HTMLImageElement).alt || ''}](${url})`);
 		}
-
-		// 父级 [data-src] 扫描：Swiper 懒加载图片 URL 在 <div data-src> 上
-		// Parent [data-src] scan: Swiper lazy image URLs on <div data-src>
-		for (const el of Array.from(doc.querySelectorAll('[data-src]'))) {
-			if (el.tagName === 'IMG') continue;
-			const url = el.getAttribute('data-src') || '';
-			if (!url || !/^https?:\/\//.test(url)) continue;
-			if (!url.includes('from=appmsg')) continue;
-			if (el.closest('a')) continue;
-			if (seen.has(url)) continue;
-			seen.add(url);
-			parts.push(`![](${url})`);
-		}
-
-		// cdn_url 正则：swiper 轮播隐藏图不在 DOM 中（参考 ima-copilot-sync 踩坑 #3/#8）
-		// cdn_url regex: swiper hidden images not in DOM
-		const cdnRe = /cdn_url\s*:\s*['"](https?:\/\/[^'"]*?)['"]/gi;
-		let cm: RegExpExecArray | null;
-		while ((cm = cdnRe.exec(rawHtml)) !== null) {
-			const url = cm[1] as string;
-			if (!seen.has(url)) {
-				seen.add(url);
-				parts.push(`![](${url})`);
-			}
-		}
-
 		return parts.length > 0 ? parts.join('\n') + '\n' : '';
 	}
 
