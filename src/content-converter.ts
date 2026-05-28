@@ -253,6 +253,17 @@ class WeChatConverter implements ContentConverter {
 			},
 		});
 
+		// javascript:; 链接（微信话题标签等）：去掉链接，转义 # 防止 Obsidian 标签
+		// javascript:; links (WeChat topic tags etc.): strip link, escape # to prevent Obsidian tags
+		td.addRule('jsLink', {
+			filter: (node: HTMLElement) =>
+				node.nodeName.toLowerCase() === 'a' && (node.getAttribute('href') || '').startsWith('javascript:'),
+			replacement: (content: string) => {
+				// 转义 # 防止 Obsidian 识别为标签 / Escape # to prevent Obsidian tag recognition
+				return content.replace(/(^|\s)#/g, '$1\\#');
+			},
+		});
+
 		// 带图片的链接：有文字 → 文字链接；无文字 → 保留图片（微信文章点击查看大图）
 		// Linked images: has text → text link; no text → keep image (WeChat click-to-enlarge)
 		td.addRule('linkedImage', {
