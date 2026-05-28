@@ -1,8 +1,6 @@
 /**
  * URL 提取器：从任意分享文本中提取 HTTP/HTTPS URL
  * URL Extractor: extract HTTP/HTTPS URLs from arbitrary share text
- *
- * V1: 仅提取第一个 URL / V1: only extract first URL
  */
 
 /**
@@ -50,6 +48,42 @@ export function extractUrl(text: string): string | null {
 	}
 
 	return url;
+}
+
+/**
+ * 从任意分享文本中提取所有 HTTP/HTTPS URL（去重，按出现顺序）
+ * Extract all HTTP/HTTPS URLs from arbitrary share text (deduplicated, in order)
+ *
+ * 支持每行一个 URL 或混合中文/符号的分享文本
+ * Supports one URL per line or share text with mixed Chinese/symbols
+ *
+ * @param text 分享文本 / Share text
+ * @returns 去重后的 URL 列表 / Deduplicated URL list
+ */
+export function extractUrls(text: string): string[] {
+	if (!text || !text.trim()) {
+		return [];
+	}
+
+	const regex = new RegExp(URL_REGEX.source, 'gi');
+	const matches = text.match(regex);
+	if (!matches) {
+		return [];
+	}
+
+	// 尾部清理 + 去重（保持出现顺序） / Trailing cleanup + dedup (preserve order)
+	const seen = new Set<string>();
+	const result: string[] = [];
+	for (const match of matches) {
+		let url = match.trim();
+		url = url.replace(TRAILING_PUNCTUATION, '');
+		if (url.length >= 10 && !seen.has(url)) {
+			seen.add(url);
+			result.push(url);
+		}
+	}
+
+	return result;
 }
 
 /**

@@ -14,7 +14,7 @@ import type { ShareToSaveSettings } from './types';
 import { DEFAULT_SETTINGS, ShareToSaveSettingTab } from './settings';
 import { detectLocale, createTranslator } from './i18n';
 import type { Translator } from './i18n';
-import { extractUrl } from './url-extractor';
+import { extractUrl, extractUrls } from './url-extractor';
 import { QueueManager } from './queue-manager';
 import { Downloader } from './downloader';
 import { FileWatcher } from './file-watcher';
@@ -72,16 +72,16 @@ export default class ShareToSavePlugin extends Plugin {
 		}
 
 		// ── Ribbon 按钮（全平台）/ Ribbon button (all platforms) ──
-		this.addRibbonIcon('cloud-download', this.t('ribbon.tooltip'), () => {
-			new UrlInputModal(this.app, this.t, (text) => this.handleUrlInput(text)).open();
+		this.addRibbonIcon('cloud-download', this.t('ribbon.tooltip'), async () => {
+			await this.openUrlModal();
 		});
 
 		// ── 命令（全平台）/ Command (all platforms) ──
 		this.addCommand({
 			id: 'save-url',
 			name: this.t('ribbon.tooltip'),
-			callback: () => {
-				new UrlInputModal(this.app, this.t, (text) => this.handleUrlInput(text)).open();
+			callback: async () => {
+				await this.openUrlModal();
 			},
 		});
 
@@ -129,35 +129,71 @@ export default class ShareToSavePlugin extends Plugin {
 	}
 
 	/**
-	 * 处理 UrlInputModal 的提交
-	 * Handle submission from UrlInputModal
+	 * 处理 UrlInputModal 的提交（支持多 URL，逐一入队后立即处理）
+	 * Handle submission from UrlInputModal (supports multiple URLs, enqueue then process)
 	 *
 	 * @param text 用户输入的文本 / User input text
-	 * @param mode 'queue' — 仅保存到队列; 'processNow' — 保存后立即处理（仅桌面端）
 	 */
 	private async handleUrlInput(text: string): Promise<void> {
-		const url = extractUrl(text);
-		if (!url) {
+		const urls = extractUrls(text);
+		if (urls.length === 0) {
 			new Notice(this.t('notice.noUrl'));
 			return;
 		}
 
-		await this.queueManager.appendEntry({
-			id: crypto.randomUUID(),
-			url,
-			source: Platform.isDesktop ? 'desktop' : 'mobile',
-			status: 'pending',
-			createdAt: new Date().toISOString(),
-			title: '',
-			error: null,
-		});
+		// 统一入队 / Enqueue all URLs
+		for (const url of urls) {
+			await this.queueManager.appendEntry({
+				id: crypto.randomUUID(),
+				url,
+				source: Platform.isDesktop ? 'desktop' : 'mobile',
+				status: 'pending',
+				createdAt: new Date().toISOString(),
+				title: '',
+				error: null,
+			});
+		}
 
-		new Notice(this.t('notice.saved'));
+		// 数量通知 / Count notification
+		if (urls.length === 1) {
+			new Notice(this.t('notice.saved'));
+		} else {
+			new Notice(this.t('notice.savedMultiple', { count: String(urls.length) }));
+		}
 
 		// 立即处理（桌面端）/ Process immediately (desktop)
 		if (Platform.isDesktop) {
 			await this.fileWatcher?.processNow();
 		}
+	}
+
+	/**
+	 * 打开 URL 输入模态框 / Open URL input modal
+	 *
+	 * 桌面端存在 pending 条目时预填 URL，点击"立即保存"直接触发处理
+	 * On desktop, pre-fill pending URLs and trigger processing directly on submit
+	 */
+	private async openUrlModal(): Promise<void> {
+		// 桌面端：检查是否有待处理的队列条目 / Desktop: check for pending queue entries
+		if (Platform.isDesktop) {
+			const pendingEntries = await this.queueManager.getPendingEntries();
+			if (pendingEntries.length > 0) {
+				const urls = pendingEntries.map(e => e.url).join('\n');
+				new UrlInputModal(
+					this.app,
+					this.t,
+					async () => {
+						await this.fileWatcher?.processNow();
+					},
+					urls,
+				).open();
+				return;
+			}
+		}
+
+		// 无 pending 条目时使用原有流程（提取 URL → 入队 → 处理）
+		// Use existing flow when no pending entries (extract URL → enqueue → process)
+		new UrlInputModal(this.app, this.t, (text) => this.handleUrlInput(text)).open();
 	}
 
 	// ─── 设置管理 / Settings management ────────────────────────────────────

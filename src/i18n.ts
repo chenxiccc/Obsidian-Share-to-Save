@@ -21,12 +21,16 @@ export const STRINGS: Record<string, { zh: string; en: string }> = {
 		en: 'Save URL',
 	},
 	'modal.placeholder': {
-		zh: '粘贴链接或分享文本...',
-		en: 'Paste URL or share text...',
+		zh: '每行一个网址，可粘贴含中文的分享文本...',
+		en: 'One URL per line, or paste share text...',
 	},
 	'modal.saveNow': {
 		zh: '立即保存',
 		en: 'Save now',
+	},
+	'modal.invalidUrl': {
+		zh: '第 ${line} 行链接格式无效: ${url}',
+		en: 'Invalid URL on line ${line}: ${url}',
 	},
 	'menu.button': {
 		zh: '保存到 Share to Save',
@@ -47,6 +51,10 @@ export const STRINGS: Record<string, { zh: string; en: string }> = {
 	'notice.saved': {
 		zh: '已保存到队列',
 		en: 'Saved to queue',
+	},
+	'notice.savedMultiple': {
+		zh: '已保存 ${count} 个链接到队列',
+		en: 'Saved ${count} URLs to queue',
 	},
 	'notice.savedTitle': {
 		zh: '已保存: ${title}',

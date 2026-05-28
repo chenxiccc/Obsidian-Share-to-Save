@@ -30,6 +30,16 @@
 	font-size: 1.05em;
 }
 
+.sts-url-input-modal .sts-url-error {
+	color: #c62828;
+	background: #ffebee;
+	border: 1px solid #ef9a9a;
+	border-radius: 4px;
+	padding: 6px 10px;
+	margin-top: 10px;
+	font-size: 0.85em;
+}
+
 /* ── 分享菜单注入按钮（移动端）/ Share menu injected button (mobile) ── */
 
 .share-to-save-action {
