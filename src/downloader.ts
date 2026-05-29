@@ -14,7 +14,7 @@ import { MetadataExtractor } from './metadata-extractor';
 import type { Metadata } from './metadata-extractor';
 
 /** Chrome UA — Node.js https 获取和 headless BrowserWindow 共享 */
-const CHROME_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 15_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.7258.108 Safari/537.36';
+const CHROME_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.7778.215 Safari/537.36';
 
 /** 最大重定向次数 / Maximum redirect hops */
 const MAX_REDIRECTS = 5;

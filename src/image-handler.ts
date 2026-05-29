@@ -123,7 +123,7 @@ function buildStableFilename(
 // ─── 图片处理器 / Image handler ──────────────────────────────────────────────
 
 /** Chrome UA for Node.js https.get anti-hotlink */
-const CHROME_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 15_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.7258.108 Safari/537.36';
+const CHROME_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.7778.215 Safari/537.36';
 
 export class ImageHandler {
 	private readonly attachmentsDir: string;
