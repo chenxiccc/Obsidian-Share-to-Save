@@ -161,7 +161,6 @@ export class Downloader {
 		if (!patch) return;
 		if (patch.title) metadata.title = patch.title;
 		if (patch.author) metadata.author = patch.author;
-		if (patch.authorUrl !== undefined) metadata.authorUrl = patch.authorUrl;
 		if (patch.published) metadata.published = patch.published;
 	}
 
@@ -335,11 +334,7 @@ export class Downloader {
 
 		if (parsed.author) {
 			lines.push('author:');
-			if (parsed.authorUrl) {
-				lines.push(`  - "[${parsed.author}](${parsed.authorUrl})"`);
-			} else {
-				lines.push(`  - "${parsed.author}"`);
-			}
+			lines.push(`  - "${parsed.author}"`);
 		}
 
 		if (parsed.published) {

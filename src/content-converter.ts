@@ -81,7 +81,22 @@ class WeChatConverter implements ContentConverter {
 			markdown = markdown.trimEnd() + '\n' + supplement;
 		}
 		markdown = this.cleanWhitespace(markdown);
-		return { markdown };
+
+		// 公众号名：MetadataExtractor 的 meta[name="author"] 在部分公众号文章为空，
+		// .wx_follow_nickname 是微信渲染后 DOM 里最可靠的公众号名来源。
+		// Account name: meta[name="author"] is absent in some WeChat articles;
+		// .wx_follow_nickname is the most reliable source in the rendered DOM.
+		const metadataPatch: Partial<Metadata> = {};
+		const nickname = doc.querySelector('.wx_follow_nickname')?.textContent?.trim()
+			|| doc.querySelector('#js_name')?.textContent?.trim();
+		if (nickname) {
+			metadataPatch.author = nickname;
+		}
+
+		return {
+			markdown,
+			metadataPatch: Object.keys(metadataPatch).length > 0 ? metadataPatch : undefined,
+		};
 	}
 
 	/**
@@ -358,9 +373,9 @@ class XiaohongshuConverter implements ContentConverter {
 		}
 
 		// 元数据修正：XHS 标题含 " - 小红书" 后缀需去除
-		//               authorUrl 可能是相对路径需补全域名
+		//               author 从 __INITIAL_STATE__ 的 note.user 提取
 		// Metadata patch: XHS title has " - 小红书" suffix, needs stripping
-		//                  authorUrl may be relative, needs domain prepended
+		//                  author extracted from note.user in __INITIAL_STATE__
 		const metadataPatch: Partial<Metadata> = {};
 
 		// 从 <title> 提取的标题含 " - 小红书" 后缀，除去
@@ -371,11 +386,11 @@ class XiaohongshuConverter implements ContentConverter {
 			metadataPatch.title = cleanedTitle;
 		}
 
-		// authorUrl 补全域名 / Prepend domain to authorUrl
-		const authorEl = doc.querySelector('meta[property="article:author"]');
-		const authorUrl = authorEl?.getAttribute('content')?.trim();
-		if (authorUrl && authorUrl.startsWith('/')) {
-			metadataPatch.authorUrl = 'https://www.xiaohongshu.com' + authorUrl;
+		// author 从 note.user 提取（MetadataExtractor 的 meta 标签在 XHS 为空）
+		// author from note.user (MetadataExtractor meta tags are empty on XHS)
+		const user = note.user as { nickname?: string; userId?: string } | undefined;
+		if (user?.nickname) {
+			metadataPatch.author = user.nickname;
 		}
 
 		return {

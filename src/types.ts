@@ -27,11 +27,10 @@ export interface QueueEntry {
 /** tobesave.json 文件全量结构 / Full file structure */
 export type QueueFile = QueueEntry[];
 
-/** 页面元数据（title/author/authorUrl/published）/ Page metadata */
+/** 页面元数据（title/author/published）/ Page metadata */
 export interface Metadata {
 	title: string;
 	author: string;
-	authorUrl?: string;
 	published: string;
 }
 
@@ -40,7 +39,6 @@ export interface ParsedContent extends Metadata {
 	content: string;
 	imageUrls: string[];
 }
-
 /** 插件设置 / Plugin settings */
 export interface ShareToSaveSettings {
 	/** 输出文件夹名（默认 "Sts"）/ Output folder name (default "Sts") */

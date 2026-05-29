@@ -1,6 +1,6 @@
 /**
- * 页面元数据提取器：title/author/authorUrl/published
- * Page metadata extractor: title/author/authorUrl/published
+ * 页面元数据提取器：title/author/published
+ * Page metadata extractor: title/author/published
  *
  * 替代 defuddle 的元数据提取，专注于本项目需要的 4 个字段。
  * 参考 defuddle/src/metadata.ts 的提取策略，简化为实际需要的部分。
@@ -23,7 +23,6 @@ export class MetadataExtractor {
 		return {
 			title: MetadataExtractor.extractTitle(doc, schema),
 			author: MetadataExtractor.extractAuthor(doc, schema),
-			authorUrl: MetadataExtractor.extractAuthorUrl(doc, schema),
 			published: MetadataExtractor.extractPublished(doc, schema),
 		};
 	}
@@ -116,32 +115,6 @@ export class MetadataExtractor {
 		}
 
 		return '';
-	}
-
-	// ── 作者 URL / Author URL ─────────────────────────────────────────────
-
-	/**
-	 * 提取作者主页 URL，优先级：schema url → article:author URL → DOM
-	 * Extract author profile URL, priority: schema url → article:author URL → DOM
-	 */
-	private static extractAuthorUrl(doc: Document, schema: Record<string, unknown>): string | undefined {
-		// Schema.org / Schema.org
-		const schemaUrl = MetadataExtractor.getSchemaString(schema, 'author.url');
-		if (schemaUrl) return schemaUrl;
-
-		// article:author 如果是 URL / article:author if URL
-		const articleAuthor = MetadataExtractor.getMeta(doc, 'property', 'article:author');
-		if (articleAuthor && /^https?:\/\//i.test(articleAuthor)) {
-			return articleAuthor;
-		}
-
-		// DOM: rel="author" href / DOM: rel="author" href
-		const relAuthor = doc.querySelector('a[rel="author"]');
-		if (relAuthor instanceof HTMLAnchorElement && relAuthor.href) {
-			return relAuthor.href;
-		}
-
-		return undefined;
 	}
 
 	// ── 发布日期 / Published Date ─────────────────────────────────────────
