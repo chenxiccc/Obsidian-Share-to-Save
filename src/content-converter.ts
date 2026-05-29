@@ -7,6 +7,7 @@
  */
 
 import TurndownService from 'turndown';
+import { gfm } from '@joplin/turndown-plugin-gfm';
 import Defuddle from 'defuddle/full';
 import type { Metadata } from './types';
 
@@ -39,6 +40,15 @@ const WECHAT_CONTAINERS = [
 ];
 
 const SYSTEM_IMG = ['pic_blank.gif', 'res.wx.qq.com/mmbizappmsg'];
+
+/**
+ * 对 URL 做 Markdown 链接目标逃逸：转义 <>() 和空格
+ * Escape URL for Markdown link destination: escape <>() and spaces
+ */
+function escapeLinkDestination(destination: string): string {
+	const escaped = destination.replace(/([<>()])/g, '\\$1');
+	return escaped.indexOf(' ') >= 0 ? '<' + escaped + '>' : escaped;
+}
 
 // ─── 微信转换器 / WeChat Converter ──────────────────────────────────────────
 
@@ -110,7 +120,7 @@ class WeChatConverter implements ContentConverter {
 			.map(line => line.trim() ? line.trimEnd() : '')
 			.join('\n')
 			.replace(/\n{3,}/g, '\n\n')
-			.trim();
+			.trimEnd();  // 开头由 turndown postProcess() 已处理
 	}
 
 	// ── 容器检测 ──────────────────────────────────────────────────────────
@@ -273,7 +283,10 @@ class WeChatConverter implements ContentConverter {
 			const dedupKey = normalizeForDedup(url);
 			if (seen.has(dedupKey)) continue;
 			seen.add(dedupKey);
-			parts.push(`![${(img as HTMLImageElement).alt || ''}](${url})`);
+			const rawAlt = (img as HTMLImageElement).alt || '';
+			const alt = rawAlt ? this.getTurndown().escape(rawAlt.replace(/\s+/g, ' ').trim()) : '';
+			const escapedUrl = escapeLinkDestination(url);
+			parts.push(`![${alt}](${escapedUrl})`);
 		}
 		return parts.length > 0 ? parts.join('\n') + '\n' : '';
 	}
@@ -290,14 +303,24 @@ class WeChatConverter implements ContentConverter {
 			emDelimiter: '_', bulletListMarker: '-',
 		});
 
+		// GFM 扩展：表格、删除线、任务列表、围栏代码块高亮
+		// GFM extensions: tables, strikethrough, task lists, fenced code blocks
+		td.use(gfm);
+
+		// 用内置 remove 替代自定义 removeTags 规则
+		// Use built-in remove instead of custom rule
+		td.remove(['style', 'script', 'noscript']);
+
 		td.addRule('image', {
 			filter: 'img',
 			replacement: (_c: string, node: Node) => {
 				const el = node as HTMLElement;
 				const url = el.getAttribute('data-src') || el.getAttribute('src') || '';
 				if (!url || !/^https?:\/\//.test(url)) return '';
-				const alt = (el.getAttribute('alt') || '').replace(/\s+/g, ' ').trim() || 'Image';
-				return `![${alt}](${url})`;
+				const rawAlt = (el.getAttribute('alt') || '').replace(/\s+/g, ' ').trim() || 'Image';
+				const alt = td.escape(rawAlt);
+				const escapedUrl = escapeLinkDestination(url);
+				return `![${alt}](${escapedUrl})`;
 			},
 		});
 
@@ -309,8 +332,10 @@ class WeChatConverter implements ContentConverter {
 				(node as HTMLElement).querySelectorAll('img').forEach(img => {
 					const url = img.getAttribute('data-src') || img.getAttribute('src') || '';
 					if (url && /^https?:\/\//.test(url)) {
-						const alt = (img.getAttribute('alt') || '').replace(/\s+/g, ' ').trim() || 'Image';
-						parts.push(`![${alt}](${url})`);
+						const rawAlt = (img.getAttribute('alt') || '').replace(/\s+/g, ' ').trim() || 'Image';
+						const alt = td.escape(rawAlt);
+						const escapedUrl = escapeLinkDestination(url);
+						parts.push(`![${alt}](${escapedUrl})`);
 					}
 				});
 				return parts.join('\n');
@@ -346,16 +371,13 @@ class WeChatConverter implements ContentConverter {
 				}
 				// 无文字说明 → 保留图片 / No text content → keep the image
 				if (imgUrl && /^https?:\/\//.test(imgUrl)) {
-					const alt = imgAlt.replace(/\s+/g, ' ').trim() || 'Image';
-					return `![${alt}](${imgUrl})`;
+					const rawAlt = imgAlt.replace(/\s+/g, ' ').trim() || 'Image';
+					const alt = td.escape(rawAlt);
+					const escapedImgUrl = escapeLinkDestination(imgUrl);
+					return `![${alt}](${escapedImgUrl})`;
 				}
 				return '';
 			},
-		});
-
-		td.addRule('removeTags', {
-			filter: ['style', 'script', 'noscript'],
-			replacement: () => '',
 		});
 
 		this.turndownInstance = td;
