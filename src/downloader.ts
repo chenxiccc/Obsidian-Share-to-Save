@@ -80,8 +80,13 @@ export class Downloader {
 		}
 
 		if (Downloader.hasSsrState(fetched.html)) {
-			// SSR 页面：保留原始 HTML（headless 可能丢失 __INITIAL_STATE__ 等数据）
-			// SSR page: keep raw HTML (headless may lose __INITIAL_STATE__ data)
+			if (!Downloader.isMinimallyViable(fetched.html)) {
+				// SSR 框架返回空壳 → headless 兜底 / SSR shell → headless fallback
+				const fallback = await this.headlessExtractor.extractRenderedHtml(url);
+				if (fallback) return { html: fallback, canonicalUrl: url };
+			}
+			// SSR 页面且内容可用：保留原始 HTML（headless 可能丢失 __INITIAL_STATE__ 等数据）
+			// SSR page with viable content: keep raw HTML (headless may lose __INITIAL_STATE__ data)
 			return fetched;
 		}
 
@@ -283,6 +288,19 @@ export class Downloader {
 		if (html.length > 200_000 && text.length < 500) return true;
 
 		return false;
+	}
+
+	/**
+	 * 最小可行性检测：HTML 有基础内容，专用于 SSR 短路分支
+	 * Minimal viability check: HTML has basic content, used only in SSR branch
+	 *
+	 * 不复用 isQualityPoor：后者的大文件规则（>200KB 且文本<500字符）对 SSR 页面不适用
+	 * Does not reuse isQualityPoor: its large-file rule is inapplicable to SSR pages
+	 */
+	private static isMinimallyViable(html: string): boolean {
+		if (html.length < 200) return false;
+		const text = html.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
+		return text.length >= 50;
 	}
 
 	// ── 工具方法 / Utility Methods ──────────────────────────────────────────
