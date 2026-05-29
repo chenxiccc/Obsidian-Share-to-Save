@@ -9,13 +9,12 @@
  * Based on ima-copilot-sync's HeadlessExtractor implementation
  */
 
+import { CHROME_UA } from './types';
+
 const LOAD_TIMEOUT_MS = 30_000;
 const CONTENT_POLL_INTERVAL_MS = 500;
 const CONTENT_POLL_MAX_MS = 20_000;
 const BROWSER_PARTITION = 'persist:share-to-save';
-
-/** Chrome UA — 与 ima-copilot-sync 一致 / Chrome UA — identical to ima-copilot-sync */
-const CHROME_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.7778.215 Safari/537.36';
 
 /**
  * 通用内容容器的 CSS 选择器列表（按优先级排序）
