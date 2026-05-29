@@ -8,15 +8,7 @@
  * Based on defuddle/src/metadata.ts extraction strategy, simplified to what's actually used.
  */
 
-// ─── 类型 / Types ──────────────────────────────────────────────────────────────
-
-/** 页面元数据 / Page metadata */
-export interface Metadata {
-	title: string;
-	author: string;
-	authorUrl?: string;
-	published: string;
-}
+import type { Metadata } from './types';
 
 // ─── 提取器 / Extractor ───────────────────────────────────────────────────────
 

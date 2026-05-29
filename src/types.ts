@@ -27,12 +27,16 @@ export interface QueueEntry {
 /** tobesave.json 文件全量结构 / Full file structure */
 export type QueueFile = QueueEntry[];
 
-/** 页面解析结果（元数据 + 正文 + 图片列表）/ Page parse result (metadata + body + image list) */
-export interface ParsedContent {
+/** 页面元数据（title/author/authorUrl/published）/ Page metadata */
+export interface Metadata {
 	title: string;
 	author: string;
 	authorUrl?: string;
 	published: string;
+}
+
+/** 页面解析结果（元数据 + 正文 + 图片列表）/ Page parse result (metadata + body + image list) */
+export interface ParsedContent extends Metadata {
 	content: string;
 	imageUrls: string[];
 }

@@ -6,15 +6,12 @@
  */
 
 import { Vault, normalizePath } from 'obsidian';
-import type { ParsedContent, ProcessResult, ShareToSaveSettings } from './types';
+import type { ParsedContent, ProcessResult, ShareToSaveSettings, Metadata } from './types';
+import { CHROME_UA } from './types';
 import { ImageHandler } from './image-handler';
 import { HeadlessExtractor } from './headless-extractor';
 import { findConverter } from './content-converter';
 import { MetadataExtractor } from './metadata-extractor';
-import type { Metadata } from './metadata-extractor';
-
-/** Chrome UA — Node.js https 获取和 headless BrowserWindow 共享 */
-const CHROME_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.7778.215 Safari/537.36';
 
 /** 最大重定向次数 / Maximum redirect hops */
 const MAX_REDIRECTS = 5;

@@ -8,7 +8,7 @@
 
 import TurndownService from 'turndown';
 import Defuddle from 'defuddle/full';
-import type { Metadata } from './metadata-extractor';
+import type { Metadata } from './types';
 
 // ─── 类型 / Types ──────────────────────────────────────────────────────────
 
