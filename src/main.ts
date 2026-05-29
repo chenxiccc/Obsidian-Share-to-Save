@@ -41,6 +41,8 @@ export default class ShareToSavePlugin extends Plugin {
 		this.queueManager = new QueueManager(
 			this.app.vault,
 			this.manifest.id,
+			this.settings.queueFileLocation,
+			this.settings.outputFolder,
 		);
 
 		// ── 初始化分享菜单注入器（移动端）/ Initialize share menu injector (mobile) ──

@@ -44,6 +44,31 @@ export const STRINGS: Record<string, { zh: string; en: string }> = {
 		zh: '链接内容将保存到此文件夹下',
 		en: 'Saved content will be placed in this folder',
 	},
+	'settings.queueLocation.name': {
+		zh: '队列文件存储位置',
+		en: 'Queue file location',
+	},
+	'settings.queueLocation.desc': {
+		zh: '手机端和电脑端必须设置为相同位置。',
+		en: 'Mobile and desktop must use the same location.',
+	},
+	'settings.queueLocation.vault': {
+		zh: '笔记库 Share-to-Save 文件夹',
+		en: 'Vault Share-to-Save folder',
+	},
+	'settings.queueLocation.plugin': {
+		zh: '插件安装目录',
+		en: 'Plugin directory',
+	},
+	'settings.queueLocation.syncHint': {
+		zh: '请使用任意同步方式，在手机端和电脑端之间同步队列文件，电脑端检测到队列文件变化后会自动提取内容。',
+		en: 'Use any sync method to sync the queue file between mobile and desktop. Desktop will automatically process changes when detected.',
+	},
+	'settings.queueLocation.syncPluginHint': {
+		zh: '若选择"插件安装目录"，需使用支持配置同步的工具（如 ${link}）。',
+		en: 'If "Plugin directory" is selected, use a config sync tool (e.g. ${link}).',
+	},
+
 	'notice.noUrl': {
 		zh: '未找到有效链接',
 		en: 'No valid URL found',

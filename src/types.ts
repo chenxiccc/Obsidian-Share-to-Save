@@ -39,10 +39,16 @@ export interface ParsedContent extends Metadata {
 	content: string;
 	imageUrls: string[];
 }
+
+/** 队列文件存储位置 / Queue file storage location */
+export type QueueFileLocation = 'vault' | 'plugin';
+
 /** 插件设置 / Plugin settings */
 export interface ShareToSaveSettings {
-	/** 输出文件夹名（默认 "Sts"）/ Output folder name (default "Sts") */
+	/** 输出文件夹名（默认 "Share-to-Save"）/ Output folder name (default "Share-to-Save") */
 	outputFolder: string;
+	/** 队列文件存储位置（默认 vault）/ Queue file storage location (default vault) */
+	queueFileLocation: QueueFileLocation;
 }
 
 /** 图片下载结果 / Image download result */

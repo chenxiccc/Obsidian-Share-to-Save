@@ -2,11 +2,11 @@
  * tobesave.json 队列管理器
  * Queue file CRUD with atomic I/O
  *
- * 文件路径 / File path: {vault}/.obsidian/plugins/share-to-save/tobesave.json
+ * 文件路径可在设置中配置 / File path configurable via settings: vault/{outputFolder}/tobesave.json or plugin dir
  */
 
 import type { Vault } from 'obsidian';
-import type { QueueEntry, QueueFile, QueueStatus } from './types';
+import type { QueueEntry, QueueFile, QueueStatus, QueueFileLocation } from './types';
 
 /** tobesave.json 文件名 / Queue file name */
 const QUEUE_FILE = 'tobesave.json';
@@ -18,10 +18,18 @@ export class QueueManager {
 	constructor(
 		private vault: Vault,
 		private pluginId: string,
+		private queueFileLocation: QueueFileLocation,
+		private outputFolder: string,
 	) {
-		// 插件数据目录 / Plugin data directory: .obsidian/plugins/{pluginId}/
-		this.queueDir = `${vault.configDir}/plugins/${pluginId}`;
-		this.queuePath = `${this.queueDir}/${QUEUE_FILE}`;
+		if (queueFileLocation === 'vault') {
+			// 笔记库文件夹 / Vault folder: {outputFolder}/tobesave.json
+			this.queueDir = outputFolder;
+			this.queuePath = `${outputFolder}/${QUEUE_FILE}`;
+		} else {
+			// 插件安装目录 / Plugin directory: .obsidian/plugins/{pluginId}/tobesave.json
+			this.queueDir = `${vault.configDir}/plugins/${pluginId}`;
+			this.queuePath = `${this.queueDir}/${QUEUE_FILE}`;
+		}
 	}
 
 	/** 获取队列文件完整路径 / Get queue file full path */
