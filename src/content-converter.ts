@@ -175,6 +175,9 @@ class WeChatConverter implements ContentConverter {
 	 *
 	 * 参考 ima-copilot-sync extractWeChatImages
 	 * - from=appmsg 是区分正文图和推荐缩略图的唯一特征
+	 *   设计决策：不用 closest('#js_content') 检查——多区域合并架构下 #img_list 和
+	 *   #js_content 已各自独立提取，closest 的前提假设已消失（见 57f7e5d）。
+	 *   风险：若微信去掉 from=appmsg 参数，需重新引入 closest 或其他过滤机制。
 	 * - data-src 优先（懒加载），回退 src
 	 * - 已有 Markdown 图片去重
 	 */
