@@ -69,6 +69,11 @@ export const STRINGS: Record<string, { zh: string; en: string }> = {
 		en: 'If "Plugin directory" is selected, use a config sync tool (e.g. ${link}).',
 	},
 
+	'failed.body': {
+		zh: '提取失败，请手动保存，可以用Obsidian的核心插件网页浏览器，也可以用[Obsidian Web Clipper](https://obsidian.md/zh/clipper)。',
+		en: 'Extraction failed. Please save manually using Obsidian\'s core plugin "Web Browser" or [Obsidian Web Clipper](https://obsidian.md/clipper).',
+	},
+
 	'notice.noUrl': {
 		zh: '未找到有效链接',
 		en: 'No valid URL found',

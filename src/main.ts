@@ -60,6 +60,7 @@ export default class ShareToSavePlugin extends Plugin {
 			this.downloader = new Downloader(
 				this.app.vault,
 				this.settings,
+				this.t,
 			);
 
 			this.fileWatcher = new FileWatcher(

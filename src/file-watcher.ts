@@ -117,12 +117,20 @@ export class FileWatcher {
 					if (result.success) {
 						await this.queueManager.removeEntry(entry.id);
 						new Notice(`已保存: ${result.title ?? entry.url}`);
+					} else {
+						// 提取失败：生成 save_failed 文件，从队列删除
+						// Extraction failed: generate save_failed note, remove from queue
+						await this.downloader.saveFailedNote(entry.url);
+						await this.queueManager.removeEntry(entry.id);
+						this.debugLog(`提取失败 / Extraction failed: ${entry.url}`);
 					}
 				} catch (err) {
+					// 异常：同样生成 save_failed 文件，从队列删除
+					// Exception: also generate save_failed note and remove from queue
 					const errMsg = err instanceof Error ? err.message : String(err);
-					await this.queueManager.updateStatus(entry.id, 'error', errMsg);
-					this.debugLog(`处理失败 / Processing failed: ${entry.url} - ${errMsg}`);
-					new Notice(`下载失败: ${errMsg}`);
+					this.debugLog(`处理异常 / Processing exception: ${entry.url} - ${errMsg}`);
+					await this.downloader.saveFailedNote(entry.url);
+					await this.queueManager.removeEntry(entry.id);
 				}
 			}
 		} finally {

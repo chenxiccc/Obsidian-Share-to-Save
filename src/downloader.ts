@@ -9,6 +9,7 @@ import { Vault, normalizePath } from 'obsidian';
 import type { ParsedContent, ProcessResult, ShareToSaveSettings, Metadata } from './types';
 import { CHROME_UA } from './types';
 import { ImageHandler } from './image-handler';
+import type { Translator } from './i18n';
 import { HeadlessExtractor } from './headless-extractor';
 import { findConverter } from './content-converter';
 import { MetadataExtractor } from './metadata-extractor';
@@ -31,6 +32,7 @@ export class Downloader {
 	constructor(
 		private vault: Vault,
 		private settings: ShareToSaveSettings,
+		private t: Translator,
 	) {
 		this.imageHandler = new ImageHandler(vault, settings.outputFolder);
 		this.headlessExtractor = new HeadlessExtractor();
@@ -136,7 +138,6 @@ export class Downloader {
 	 */
 	private async saveNote(parsed: ParsedContent, sourceUrl: string, stsId: string): Promise<ProcessResult> {
 		const safeTitle = Downloader.sanitizeNoteTitle(parsed.title || 'Untitled');
-		const notePath = normalizePath(`${this.settings.outputFolder}/${safeTitle}.md`);
 
 		const frontmatter = Downloader.buildFrontmatter(parsed, sourceUrl, stsId);
 		let mdContent = frontmatter + '\n' + parsed.content;
@@ -148,9 +149,49 @@ export class Downloader {
 			await this.vault.createFolder(this.settings.outputFolder);
 		}
 
-		await this.vault.create(notePath, mdContent);
+		// 处理同名文件：递增编号 / Handle duplicate filenames: increment counter
+		const finalPath = await this.resolveUniquePath(safeTitle);
+		await this.vault.create(finalPath, mdContent);
 
 		return { success: true, title: safeTitle };
+	}
+
+	/**
+	 * 解析唯一文件路径：标题重复时递增编号
+	 * Resolve unique file path: increment counter when title conflicts
+	 */
+	private async resolveUniquePath(baseTitle: string): Promise<string> {
+		let title = baseTitle;
+		let counter = 1;
+		let notePath = normalizePath(`${this.settings.outputFolder}/${title}.md`);
+		while (await this.vault.adapter.exists(notePath)) {
+			title = `${baseTitle} ${counter}`;
+			notePath = normalizePath(`${this.settings.outputFolder}/${title}.md`);
+			counter++;
+		}
+		return notePath;
+	}
+
+	/**
+	 * 提取失败时生成占位笔记
+	 * Generate placeholder note when extraction fails
+	 */
+	async saveFailedNote(url: string): Promise<void> {
+		const now = new Date();
+		const hh = String(now.getHours()).padStart(2, '0');
+		const mm = String(now.getMinutes()).padStart(2, '0');
+		const ss = String(now.getSeconds()).padStart(2, '0');
+		const baseTitle = `save_failed_${hh}${mm}${ss}`;
+
+		const dirExists = await this.vault.adapter.exists(this.settings.outputFolder);
+		if (!dirExists) {
+			await this.vault.createFolder(this.settings.outputFolder);
+		}
+
+		const notePath = await this.resolveUniquePath(baseTitle);
+		const frontmatter = `---\nsource: "${url}"\ncreated: ${now.toISOString().slice(0, 19)}\n---`;
+		const body = this.t('failed.body');
+		await this.vault.create(notePath, frontmatter + '\n' + body);
 	}
 
 	/**
