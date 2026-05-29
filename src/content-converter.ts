@@ -33,7 +33,8 @@ export interface ContentConverter {
 /** 微信内容容器选择器（参考 ima-copilot-sync WECHAT_CONTENT_SELECTORS） */
 const WECHAT_CONTAINERS = [
 	'#js_content', '.rich_media_content', '.share_content_page',
-	'#img_list', '#js_video_page_title', '#js_audio_title', '#audio_panel_area',
+	'#img_list',  // hidden 占位符，非真实图片来源，仅后备匹配 / hidden placeholder, not real image source, fallback only
+	'#js_video_page_title', '#js_audio_title', '#audio_panel_area',
 	'#js_text_title', '#js_novel_card', '#img-content', '.rich_media',
 ];
 
@@ -47,11 +48,11 @@ class WeChatConverter implements ContentConverter {
 	convert(doc: Document, _url: string, _rawHtml?: string): ConvertResult {
 		const parts: string[] = [];
 
-		// 区域 1: #img_list（图片分享页 swiper 图片，在 #js_content 外面）
-		// Area 1: #img_list (image detail page swiper, outside #js_content)
-		const imgList = doc.getElementById('img_list');
-		if (imgList && imgList.querySelectorAll('img').length >= 2) {
-			const cleaned = this.buildCleanHtml(imgList);
+		// 区域 1: .img_swiper_area（图片分享页可见 swiper 区域，在 #js_content 外面）
+		// Area 1: .img_swiper_area (visible swiper for image share pages, outside #js_content)
+		const imgSwiperArea = doc.querySelector('.img_swiper_area');
+		if (imgSwiperArea && imgSwiperArea.querySelectorAll('img').length >= 2) {
+			const cleaned = this.buildCleanHtml(imgSwiperArea as HTMLElement);
 			const md = this.getTurndown().turndown(cleaned);
 			if (md.trim()) parts.push(md);
 		}
@@ -188,13 +189,21 @@ class WeChatConverter implements ContentConverter {
 	 * 全页扫描补充 Turndown 遗漏的图片
 	 * Scan full page to supplement images missed by Turndown
 	 *
-	 * 参考 ima-copilot-sync extractWeChatImages
-	 * - from=appmsg 是区分正文图和推荐缩略图的唯一特征
-	 *   设计决策：不用 closest('#js_content') 检查——多区域合并架构下 #img_list 和
-	 *   #js_content 已各自独立提取，closest 的前提假设已消失（见 57f7e5d）。
-	 *   风险：若微信去掉 from=appmsg 参数，需重新引入 closest 或其他过滤机制。
-	 * - data-src 优先（懒加载），回退 src
-	 * - 已有 Markdown 图片去重
+	 * 过滤策略（按顺序）/ Filter strategy (in order):
+	 * 1. 域名过滤：只保留 mmbiz.qpic.cn 图片（不依赖 URL 参数如 from=appmsg）
+	 *    Domain filter: only mmbiz.qpic.cn images (no URL parameter dependency)
+	 * 2. 系统图排除：pic_blank.gif、res.wx.qq.com/mmbizappmsg
+	 *    System image exclusion
+	 * 3. 推荐链接排除：<a> 内图片视为推荐缩略图
+	 *    Thumbnail exclusion: images inside <a> are recommendation thumbnails
+	 * 4. 头像排除：.wx_follow_avatar、.jump_author_avatar_con 内图片
+	 *    Avatar exclusion: images inside avatar containers
+	 * 5. 容器边界过滤（核心门槛）：只补充 .img_swiper_area 或 #js_content 内图片
+	 *    Container boundary filter (core gate): only images inside processed containers
+	 * 6. seen 预填充：收集已处理容器内图片 URL pathname 加入 seen，防 swiper 循环复制
+	 *    Seen pre-fill: collect URLs from processed containers to prevent swiper loop dupes
+	 * - data-src 优先（懒加载），回退 src / data-src preferred (lazy load), fallback src
+	 * - 已有 Markdown 图片去重 / dedup against existing markdown images
 	 */
 	private supplementImages(doc: Document, existingMarkdown: string): string {
 		const seen = new Set<string>();
@@ -217,16 +226,31 @@ class WeChatConverter implements ContentConverter {
 			return u;
 		};
 
+		// seen 预填充：收集已处理容器内图片 URL，防 swiper 循环复制和 Turndown 重复
+		// Seen pre-fill: collect image URLs from processed containers to prevent swiper loop dupes
+		const prefillContainers = doc.querySelectorAll('.img_swiper_area img, #js_content img');
+		for (const img of Array.from(prefillContainers)) {
+			const url = img.getAttribute('data-src') || (img as HTMLImageElement).src;
+			if (url && /^https?:\/\//.test(url)) {
+				seen.add(normalizeForDedup(url));
+			}
+		}
+
 		// DOM <img> 扫描（优先 data-src）/ DOM <img> scan: prefer data-src
 		for (const img of Array.from(doc.querySelectorAll('img'))) {
 			const url = img.getAttribute('data-src') || img.src;
 			if (!url || !/^https?:\/\//.test(url)) continue;
 			if (SYSTEM_IMG.some(f => url.includes(f))) continue;
-			if (!url.includes('from=appmsg')) continue;
+			if (!url.includes('mmbiz.qpic.cn')) continue;
 			// <a> 内 → 推荐缩略图 / Inside <a> → thumbnail
 			if (img.closest('a')) continue;
-			if (seen.has(normalizeForDedup(url))) continue;
-			seen.add(normalizeForDedup(url));
+			// .wx_follow_avatar / .jump_author_avatar_con 内 → 头像 / Inside avatar containers → avatar
+			if (img.closest('.wx_follow_avatar, .jump_author_avatar_con')) continue;
+			// 容器边界过滤（核心门槛）：只补充已处理容器内图片 / Container boundary (core gate): only processed containers
+			if (!img.closest('.img_swiper_area, #js_content')) continue;
+			const dedupKey = normalizeForDedup(url);
+			if (seen.has(dedupKey)) continue;
+			seen.add(dedupKey);
 			parts.push(`![${(img as HTMLImageElement).alt || ''}](${url})`);
 		}
 		return parts.length > 0 ? parts.join('\n') + '\n' : '';
