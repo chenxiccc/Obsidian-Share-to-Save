@@ -40,8 +40,6 @@ export default class ShareToSavePlugin extends Plugin {
 		// ── 初始化队列管理器 / Initialize queue manager ──
 		this.queueManager = new QueueManager(
 			this.app.vault,
-			this.manifest.id,
-			this.settings.queueFileLocation,
 			this.settings.outputFolder,
 		);
 
@@ -70,6 +68,7 @@ export default class ShareToSavePlugin extends Plugin {
 					// eslint-disable-next-line no-console
 					console.debug(`Share to Save: ${msg}`);
 				},
+				() => this.getPollIntervalMs(),
 			);
 			this.fileWatcher.start();
 		}
@@ -117,10 +116,7 @@ export default class ShareToSavePlugin extends Plugin {
 			id: crypto.randomUUID(),
 			url,
 			source: Platform.isDesktop ? 'desktop' : 'mobile',
-			status: 'pending',
 			createdAt: new Date().toISOString(),
-			title: '',
-			error: null,
 		});
 
 		// 桌面端立即触发处理 / Desktop: trigger immediate processing
@@ -150,10 +146,7 @@ export default class ShareToSavePlugin extends Plugin {
 				id: crypto.randomUUID(),
 				url,
 				source: Platform.isDesktop ? 'desktop' : 'mobile',
-				status: 'pending',
 				createdAt: new Date().toISOString(),
-				title: '',
-				error: null,
 			});
 		}
 
@@ -200,6 +193,17 @@ export default class ShareToSavePlugin extends Plugin {
 	}
 
 	// ─── 设置管理 / Settings management ────────────────────────────────────
+
+	/** 计算轮询间隔（毫秒）/ Calculate poll interval in milliseconds */
+	private getPollIntervalMs(): number {
+		const { pollIntervalValue, pollIntervalUnit } = this.settings;
+		switch (pollIntervalUnit) {
+			case 'seconds': return pollIntervalValue * 1000;
+			case 'minutes': return pollIntervalValue * 60_000;
+			case 'hours': return pollIntervalValue * 3_600_000;
+			default: return 30_000;
+		}
+	}
 
 	async loadSettings(): Promise<void> {
 		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());

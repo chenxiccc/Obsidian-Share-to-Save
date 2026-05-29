@@ -44,29 +44,33 @@ export const STRINGS: Record<string, { zh: string; en: string }> = {
 		zh: '链接内容将保存到此文件夹下',
 		en: 'Saved content will be placed in this folder',
 	},
-	'settings.queueLocation.name': {
-		zh: '队列文件存储位置',
-		en: 'Queue file location',
+	'settings.usage.heading': {
+		zh: '使用说明',
+		en: 'Usage Instructions',
 	},
-	'settings.queueLocation.desc': {
-		zh: '手机端和电脑端必须设置为相同位置。',
-		en: 'Mobile and desktop must use the same location.',
+	'settings.usage.content': {
+		zh: '请使用任意同步方式，推荐 ${link}，在手机和电脑间同步该文件夹，手机和电脑需使用相同文件夹。电脑端接收到新队列文件后，会自动开始获取网页内容。',
+		en: 'Use any sync method, recommends ${link}, to sync this folder between mobile and desktop. Both devices must use the same folder. Desktop will automatically extract content when new queue files are received.',
 	},
-	'settings.queueLocation.vault': {
-		zh: '笔记库 Share-to-Save 文件夹',
-		en: 'Vault Share-to-Save folder',
+	'settings.pollInterval.name': {
+		zh: '轮询间隔',
+		en: 'Polling interval',
 	},
-	'settings.queueLocation.plugin': {
-		zh: '插件安装目录',
-		en: 'Plugin directory',
+	'settings.pollInterval.desc': {
+		zh: '电脑端检查队列目录中是否有新条目的间隔。建议 >= 5 秒。',
+		en: 'How often desktop checks for new entries in the queue directory. Recommend >= 5 seconds.',
 	},
-	'settings.queueLocation.syncHint': {
-		zh: '请使用任意同步方式，在手机端和电脑端之间同步队列文件，电脑端检测到队列文件变化后会自动提取内容。',
-		en: 'Use any sync method to sync the queue file between mobile and desktop. Desktop will automatically process changes when detected.',
+	'settings.pollInterval.seconds': {
+		zh: '秒',
+		en: 'seconds',
 	},
-	'settings.queueLocation.syncPluginHint': {
-		zh: '若选择"插件安装目录"，需使用支持配置同步的工具（如 ${link}）。',
-		en: 'If "Plugin directory" is selected, use a config sync tool (e.g. ${link}).',
+	'settings.pollInterval.minutes': {
+		zh: '分钟',
+		en: 'minutes',
+	},
+	'settings.pollInterval.hours': {
+		zh: '小时',
+		en: 'hours',
 	},
 
 	'failed.body': {

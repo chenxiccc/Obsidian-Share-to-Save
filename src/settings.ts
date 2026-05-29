@@ -4,13 +4,14 @@
 
 import { PluginSettingTab, Setting, App } from 'obsidian';
 import type ShareToSavePlugin from './main';
-import type { ShareToSaveSettings, QueueFileLocation } from './types';
+import type { ShareToSaveSettings, PollIntervalUnit } from './types';
 import type { Translator } from './i18n';
 
 /** 默认设置 / Default settings */
 export const DEFAULT_SETTINGS: ShareToSaveSettings = {
 	outputFolder: 'Share-to-Save',
-	queueFileLocation: 'vault',
+	pollIntervalValue: 30,
+	pollIntervalUnit: 'seconds',
 };
 
 export class ShareToSaveSettingTab extends PluginSettingTab {
@@ -25,6 +26,24 @@ export class ShareToSaveSettingTab extends PluginSettingTab {
 	display(): void {
 		const { containerEl } = this;
 		containerEl.empty();
+
+		// ── 使用说明 / Usage Instructions ──
+		const headingEl = containerEl.createEl('h2');
+		headingEl.setText(this.t('settings.usage.heading'));
+
+		const descEl = containerEl.createDiv({ cls: 'setting-item-description' });
+		// 链接文本 / Link text
+		const linkText = 'Fast Note Sync';
+		const linkHref = 'https://github.com/haierkeys/obsidian-fast-note-sync/';
+		const content = this.t('settings.usage.content', { link: linkText });
+		const linkIdx = content.indexOf(linkText);
+		if (linkIdx >= 0) {
+			descEl.createSpan({ text: content.slice(0, linkIdx) });
+			descEl.createEl('a', { href: linkHref, text: linkText });
+			descEl.createSpan({ text: content.slice(linkIdx + linkText.length) });
+		} else {
+			descEl.setText(content);
+		}
 
 		// ── 保存文件夹 / Output folder ──
 		new Setting(containerEl)
@@ -43,38 +62,32 @@ export class ShareToSaveSettingTab extends PluginSettingTab {
 					})
 			);
 
-		// ── 队列文件存储位置 / Queue file location ──
+		// ── 轮询间隔 / Polling interval ──
 		new Setting(containerEl)
-			.setName(this.t('settings.queueLocation.name'))
-			.setDesc(this.t('settings.queueLocation.desc'))
+			.setName(this.t('settings.pollInterval.name'))
+			.setDesc(this.t('settings.pollInterval.desc'))
+			.addText(text =>
+				text
+					.setPlaceholder('30')
+					.setValue(String(this.plugin.settings.pollIntervalValue))
+					.onChange(async (value) => {
+						const num = parseInt(value, 10);
+						if (num >= 1 && num <= 60) {
+							this.plugin.settings.pollIntervalValue = num;
+							await this.plugin.saveSettings();
+						}
+					})
+			)
 			.addDropdown(dropdown =>
 				dropdown
-					.addOption('vault', this.t('settings.queueLocation.vault'))
-					.addOption('plugin', this.t('settings.queueLocation.plugin'))
-					.setValue(this.plugin.settings.queueFileLocation)
+					.addOption('seconds', this.t('settings.pollInterval.seconds'))
+					.addOption('minutes', this.t('settings.pollInterval.minutes'))
+					.addOption('hours', this.t('settings.pollInterval.hours'))
+					.setValue(this.plugin.settings.pollIntervalUnit)
 					.onChange(async (value) => {
-						this.plugin.settings.queueFileLocation = value as QueueFileLocation;
+						this.plugin.settings.pollIntervalUnit = value as PollIntervalUnit;
 						await this.plugin.saveSettings();
 					})
 			);
-
-		// ── 队列同步说明 / Queue sync instructions ──
-		const syncHintEl = containerEl.createDiv({ cls: 'setting-item-description' });
-		syncHintEl.createEl('p').setText(this.t('settings.queueLocation.syncHint'));
-
-		const syncPluginEl = containerEl.createDiv({ cls: 'setting-item-description' });
-		const linkText = 'Fast Note Sync';
-		const linkHref = 'https://github.com/haierkeys/obsidian-fast-note-sync/';
-		const hintText = this.t('settings.queueLocation.syncPluginHint', { link: linkText });
-		// 在链接位置将文本拆分为前后两段，中间插入可点击链接
-		// Split text around link placeholder and insert clickable link
-		const linkIdx = hintText.indexOf(linkText);
-		if (linkIdx >= 0) {
-			syncPluginEl.createSpan({ text: hintText.slice(0, linkIdx) });
-			syncPluginEl.createEl('a', { href: linkHref, text: linkText });
-			syncPluginEl.createSpan({ text: hintText.slice(linkIdx + linkText.length) });
-		} else {
-			syncPluginEl.createEl('p').setText(hintText);
-		}
 	}
 }

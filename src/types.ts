@@ -3,10 +3,7 @@
  * Shared type definitions
  */
 
-/** tobesave.json 队列条目的生命周期状态 / Lifecycle states of a queue entry */
-export type QueueStatus = 'pending' | 'processing' | 'error';
-
-/** tobesave.json 单个条目 / Single entry in tobesave.json */
+/** 队列条目 / Queue entry */
 export interface QueueEntry {
 	/** UUID v4 */
 	id: string;
@@ -14,18 +11,9 @@ export interface QueueEntry {
 	url: string;
 	/** 来源平台 / Source platform */
 	source: 'mobile' | 'desktop';
-	/** 处理状态 / Processing status */
-	status: QueueStatus;
 	/** 创建时间 ISO 8601 / Creation timestamp ISO 8601 */
 	createdAt: string;
-	/** 文章标题（下载后填充）/ Article title (filled after download) */
-	title: string;
-	/** 错误信息（status='error' 时）/ Error message (when status='error') */
-	error: string | null;
 }
-
-/** tobesave.json 文件全量结构 / Full file structure */
-export type QueueFile = QueueEntry[];
 
 /** 页面元数据（title/author/published）/ Page metadata */
 export interface Metadata {
@@ -40,15 +28,17 @@ export interface ParsedContent extends Metadata {
 	imageUrls: string[];
 }
 
-/** 队列文件存储位置 / Queue file storage location */
-export type QueueFileLocation = 'vault' | 'plugin';
+/** 轮询间隔单位 / Poll interval unit */
+export type PollIntervalUnit = 'seconds' | 'minutes' | 'hours';
 
 /** 插件设置 / Plugin settings */
 export interface ShareToSaveSettings {
 	/** 输出文件夹名（默认 "Share-to-Save"）/ Output folder name (default "Share-to-Save") */
 	outputFolder: string;
-	/** 队列文件存储位置（默认 vault）/ Queue file storage location (default vault) */
-	queueFileLocation: QueueFileLocation;
+	/** 轮询间隔数值（1-60）/ Poll interval value (1-60) */
+	pollIntervalValue: number;
+	/** 轮询间隔单位 / Poll interval unit */
+	pollIntervalUnit: PollIntervalUnit;
 }
 
 /** 图片下载结果 / Image download result */
