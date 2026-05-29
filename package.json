@@ -31,7 +31,7 @@
 		"typescript-eslint": "8.35.1"
 	},
 	"dependencies": {
-		"defuddle": "github:chenxiccc/defuddle#5683ae8",
+		"defuddle": "github:chenxiccc/defuddle#0e5bf20",
 		"linkedom": "^0.18.0",
 		"obsidian": "latest",
 		"turndown": "^7.2.4"
