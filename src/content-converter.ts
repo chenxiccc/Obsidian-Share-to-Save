@@ -48,20 +48,20 @@ class WeChatConverter implements ContentConverter {
 	convert(doc: Document, _url: string, _rawHtml?: string): ConvertResult {
 		const parts: string[] = [];
 
-		// 区域 1: .img_swiper_area（图片分享页可见 swiper 区域，在 #js_content 外面）
-		// Area 1: .img_swiper_area (visible swiper for image share pages, outside #js_content)
-		const imgSwiperArea = doc.querySelector('.img_swiper_area');
-		if (imgSwiperArea && imgSwiperArea.querySelectorAll('img').length >= 2) {
-			const cleaned = this.buildCleanHtml(imgSwiperArea as HTMLElement);
+		// 区域 1: #js_content（标准图文 + 图片分享页的文字描述）
+		// Area 1: #js_content (standard article + image detail page text)
+		const jsContent = doc.getElementById('js_content');
+		if (jsContent && (jsContent.textContent?.trim().length || 0) > 0) {
+			const cleaned = this.buildCleanHtml(jsContent);
 			const md = this.getTurndown().turndown(cleaned);
 			if (md.trim()) parts.push(md);
 		}
 
-		// 区域 2: #js_content（标准图文 + 图片分享页的文字描述）
-		// Area 2: #js_content (standard article + image detail page text)
-		const jsContent = doc.getElementById('js_content');
-		if (jsContent && (jsContent.textContent?.trim().length || 0) > 0) {
-			const cleaned = this.buildCleanHtml(jsContent);
+		// 区域 2: .img_swiper_area（图片分享页可见 swiper 区域，在 #js_content 外面，图片放文章结尾）
+		// Area 2: .img_swiper_area (visible swiper for image share pages, outside #js_content, images at end)
+		const imgSwiperArea = doc.querySelector('.img_swiper_area');
+		if (imgSwiperArea && imgSwiperArea.querySelectorAll('img').length >= 2) {
+			const cleaned = this.buildCleanHtml(imgSwiperArea as HTMLElement);
 			const md = this.getTurndown().turndown(cleaned);
 			if (md.trim()) parts.push(md);
 		}
@@ -140,7 +140,7 @@ class WeChatConverter implements ContentConverter {
 		return null;
 	}
 
-	/** 克隆容器、data-src→src（含 Swiper 父级提升）、移除微信 UI → 构建最小 HTML */
+	/** 克隆容器、data-src→src（含 Swiper 父级提升）、移除微信 UI、图片去重 → 构建最小 HTML */
 	private buildCleanHtml(el: HTMLElement): string {
 		const clone = el.cloneNode(true) as HTMLElement;
 
@@ -163,8 +163,8 @@ class WeChatConverter implements ContentConverter {
 			});
 		});
 
-		// 移除微信 UI 元素（赞赏弹窗、底部导航等）
-		// Remove WeChat UI elements (donation dialog, bottom nav, etc.)
+		// 移除微信 UI 元素（赞赏弹窗、底部导航、Swiper UI 等）
+		// Remove WeChat UI elements (donation dialog, bottom nav, Swiper UI, etc.)
 		const uiSelectors = [
 			'.reward_area', '.reward_qrcode', '.reward_setting',
 			'.profile_area', '.profile_inner',
@@ -175,9 +175,31 @@ class WeChatConverter implements ContentConverter {
 			'#js_reward_area', '#js_bottom_ad',
 			'.original_panel', '.global_vip_guide',
 			'mp-common-profile', 'mp-common-mpaudio',
+			// Swiper 占位符和 UI 元素 / Swiper placeholder and UI elements
+			'.share_media_swiper_placeholder',  // hidden 占位符（含 page counter "1/15" 文本）
+			'.swiper_indicator_wrp',             // dot 指示器 + counter 文本
+			'.swiper_indicator_wrp_pc',          // PC 端 dot 指示器
+			'.right-bottom-area',                // counter "1/15" 文字
 		];
 		uiSelectors.forEach(sel => {
 			try { clone.querySelectorAll(sel).forEach(n => n.remove()); } catch { /* skip */ }
+		});
+
+		// 3. 图片去重：按 URL pathname 去重，消除 Swiper 循环复制图
+		//    Image dedup: deduplicate by URL pathname to eliminate Swiper loop duplicates
+		const seenPathnames = new Set<string>();
+		clone.querySelectorAll('img').forEach(img => {
+			const url = img.getAttribute('src') || '';
+			if (!url || !/^https?:\/\//.test(url)) return;
+			try {
+				const p = new URL(url);
+				const key = p.hostname.endsWith('.qpic.cn') ? p.origin + p.pathname : url;
+				if (seenPathnames.has(key)) {
+					img.remove();
+				} else {
+					seenPathnames.add(key);
+				}
+			} catch { /* keep image if URL parse fails */ }
 		});
 
 		return `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>${clone.innerHTML}</body></html>`;
