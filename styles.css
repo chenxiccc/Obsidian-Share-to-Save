@@ -9,34 +9,19 @@
 	max-width: 520px;
 }
 
-/* ── 设置按钮：绝对定位在关闭按钮左侧 / Settings button: absolute positioned left of close button ── */
+/* ── 标题图标 / Title icon ── */
 
-.sts-modal-settings {
-	position: absolute;
-	top: 6px;
-	right: 40px;
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	width: 28px;
-	height: 28px;
-	border-radius: var(--radius-s);
-	color: var(--text-muted);
-	cursor: pointer;
-	opacity: 0.7;
-	z-index: 10;
-}
-
-.sts-modal-settings:hover {
-	opacity: 1;
-	background-color: var(--background-modifier-hover);
+.sts-modal-title-icon {
+	margin-right: 6px;
+	display: inline-flex;
+	vertical-align: middle;
 }
 
 /* ── 输入区 / Input area ── */
 
 .sts-url-input-modal textarea.sts-url-textarea {
 	width: 100%;
-	min-height: 120px;
+	min-height: 60px;
 	font-family: var(--font-monospace);
 	font-size: 0.88em;
 	padding: 14px;
@@ -76,8 +61,6 @@
 	justify-content: center;
 	gap: 12px;
 	margin-top: 20px;
-	padding-top: 16px;
-	border-top: 1px solid var(--background-modifier-border);
 }
 
 .sts-url-input-modal .sts-save-btn {

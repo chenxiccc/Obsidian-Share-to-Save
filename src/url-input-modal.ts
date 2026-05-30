@@ -21,31 +21,21 @@ export class UrlInputModal extends Modal {
 	}
 
 	onOpen(): void {
-		const { contentEl, titleEl, modalEl } = this;
+		const { contentEl, titleEl } = this;
 		contentEl.empty();
 		contentEl.addClass('sts-url-input-modal');
 
-		// ── 标题：复用 Obsidian 原生 .modal-title，只改文字 / Title: reuse Obsidian native .modal-title ──
+		// ── 标题 / Title ──
 		titleEl.empty();
+		const iconEl = titleEl.createSpan({ cls: 'sts-modal-title-icon' });
+		setIcon(iconEl, 'cloud-download');
 		titleEl.createSpan({ text: this.t('modal.title') });
-
-		// ── 设置按钮：放在 modalEl 上，绝对定位到关闭按钮左侧 / Settings button: positioned left of close button ──
-		const settingsBtn = modalEl.createDiv({ cls: 'sts-modal-settings' });
-		setIcon(settingsBtn, 'settings');
-		settingsBtn.setAttribute('aria-label', this.t('modal.settings'));
-		settingsBtn.addEventListener('click', () => {
-			this.close();
-			// @ts-ignore - setting is available at runtime but not in public API
-			this.app.setting.open();
-			// @ts-ignore - openTabById is available at runtime
-			this.app.setting.openTabById('share-to-save');
-		});
 
 		// ── 输入区 / Input area ──
 		const textareaEl = contentEl.createEl('textarea', {
 			attr: {
 				placeholder: this.t('modal.placeholder'),
-				rows: '8',
+				rows: '4',
 			},
 			cls: 'sts-url-textarea',
 		});
