@@ -61,6 +61,20 @@ function extractExtFromUrl(url: string): string {
  * Only checks path + query + fragment, avoiding false matches in hostname
  */
 function guessFileExtension(url: string): string {
+	// 微信 CDN 图片：从 wx_fmt 参数推断格式（比 pathname 和 Content-Type 更可靠）
+	// WeChat CDN images: infer format from wx_fmt param (more reliable than pathname or Content-Type)
+	try {
+		const wxFmt = new URL(url).searchParams.get('wx_fmt');
+		if (wxFmt) {
+			const fmt = wxFmt.toLowerCase();
+			if (fmt === 'jpeg' || fmt === 'jpg') return '.jpg';
+			if (fmt === 'png') return '.png';
+			if (fmt === 'gif') return '.gif';
+			if (fmt === 'webp') return '.webp';
+			if (fmt === 'svg') return '.svg';
+		}
+	} catch { /* ignore parse errors */ }
+
 	let target = url;
 	try {
 		const u = new URL(url);
@@ -275,11 +289,17 @@ export class ImageHandler {
 
 		return new Promise<Buffer>((resolve, reject) => {
 			const doRequest = (requestUrl: string): void => {
+				// 微信 CDN 图片需要 Referer 绕过防盗链 / WeChat CDN images need Referer to bypass hotlink protection
+				const isWeChatCdn = /qpic\.cn/.test(requestUrl);
+				const imgHeaders: Record<string, string> = {
+					'User-Agent': CHROME_UA,
+					'Accept': 'image/*, */*',
+				};
+				if (isWeChatCdn) {
+					imgHeaders['Referer'] = 'https://mp.weixin.qq.com/';
+				}
 				const req = mod.get(requestUrl, {
-					headers: {
-						'User-Agent': CHROME_UA,
-						'Accept': 'image/*, */*',
-					},
+					headers: imgHeaders,
 				}, (res) => {
 					// 处理重定向 / Handle redirect
 					if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {

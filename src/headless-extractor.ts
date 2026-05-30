@@ -84,6 +84,12 @@ export class HeadlessExtractor {
 			await this.loadUrlWithTimeout(win, url);
 
 			const html = await this.waitForContentAndExtract(win);
+			// 验证码检测：微信反爬验证页不具备有效内容 / Captcha detection: WeChat anti-crawl page has no valid content
+			if (html && HeadlessExtractor.hasCaptcha(html)) {
+				// eslint-disable-next-line no-console
+				console.warn('Share to Save: 检测到微信验证码页面，建议稍后重试 / Detected WeChat captcha page, try again later');
+				return null;
+			}
 			return html;
 		} catch (err) {
 			// eslint-disable-next-line no-console
@@ -106,6 +112,14 @@ export class HeadlessExtractor {
 			}
 		}
 		return false;
+	}
+
+	/**
+	 * 检测 HTML 是否为微信验证码/反爬页面 / Detect if HTML is a WeChat captcha/anti-crawl page
+	 */
+	static hasCaptcha(html: string): boolean {
+		const indicators = ['js_verify', 'verify_container', '环境异常', '请完成安全验证', '操作频繁'];
+		return indicators.some(ind => html.includes(ind));
 	}
 
 	/**

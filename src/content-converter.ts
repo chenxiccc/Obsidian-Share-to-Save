@@ -157,7 +157,10 @@ class WeChatConverter implements ContentConverter {
 		// 1. <img data-src> → <img src> / Promote data-src on img elements
 		clone.querySelectorAll('img').forEach(img => {
 			const ds = img.getAttribute('data-src');
-			if (ds && !img.src) img.setAttribute('src', ds);
+			const currentSrc = img.getAttribute('src') || '';
+			if (ds && (!currentSrc || currentSrc.startsWith('data:') || currentSrc.includes('pic_blank'))) {
+				img.setAttribute('src', ds);
+			}
 		});
 
 		// 2. Swiper 懒加载：父级 <div data-src="真实URL"> → 子 <img src>
@@ -195,7 +198,45 @@ class WeChatConverter implements ContentConverter {
 			try { clone.querySelectorAll(sel).forEach(n => n.remove()); } catch { /* skip */ }
 		});
 
-		// 3. 图片去重：按 URL pathname 去重，消除 Swiper 循环复制图
+		// 3. 代码块处理：多 <code> 合并 + data-lang 提取 + span/<br> 清理 + code-snippet__fix 行号移除
+		//    Code block processing: merge multi <code> + extract data-lang + clean span/<br> + remove line numbers
+		// a) code-snippet__fix 老格式：移除行号 <ul>，解包 <section> / Old format: remove line number <ul>, unwrap <section>
+		clone.querySelectorAll('.code-snippet__fix').forEach(section => {
+			section.querySelectorAll('.code-snippet__line-index').forEach(el => el.remove());
+			const p = section.parentNode;
+			if (p) {
+				while (section.firstChild) p.insertBefore(section.firstChild, section);
+				section.remove();
+			}
+		});
+		// b) <pre> 内多 <code> 合并为单 <code> + data-lang 转 class / Merge multi <code> into single <code> + data-lang to class
+		clone.querySelectorAll('pre').forEach(pre => {
+			const codeEls = Array.from(pre.querySelectorAll(':scope > code'));
+			if (codeEls.length > 1) {
+				const lines = codeEls.map(c => c.textContent || '');
+				const lang = pre.getAttribute('data-lang') || '';
+				pre.innerHTML = '';
+				const newCode = document.createElement('code');
+				if (lang) newCode.className = `language-${lang}`;
+				newCode.textContent = lines.join('\n');
+				pre.appendChild(newCode);
+			} else if (codeEls.length === 1 && pre.getAttribute('data-lang')) {
+				(codeEls[0] as Element).classList.add(`language-${pre.getAttribute('data-lang')}`);
+			}
+			// c) 解包所有 <span> 标签（保留子节点，移除语法高亮标签） / Unwrap all <span> (keep children, remove syntax highlight tags)
+			pre.querySelectorAll('span').forEach(span => {
+				const sp = span.parentNode;
+				if (sp) {
+					while (span.firstChild) sp.insertBefore(span.firstChild, span);
+					span.remove();
+				}
+			});
+			// d) <br> → 换行符 / <br> → newline
+			pre.querySelectorAll('br').forEach(br => {
+				br.replaceWith(document.createTextNode('\n'));
+			});
+		});
+		// 4. 图片去重：按 URL pathname 去重，消除 Swiper 循环复制图
 		//    Image dedup: deduplicate by URL pathname to eliminate Swiper loop duplicates
 		const seenPathnames = new Set<string>();
 		clone.querySelectorAll('img').forEach(img => {

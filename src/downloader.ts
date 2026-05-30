@@ -116,7 +116,7 @@ export class Downloader {
 		const doc = parser.parseFromString(html, 'text/html');
 
 		// 元数据：MetadataExtractor 统一提取 / Metadata: unified via MetadataExtractor
-		const metadata = MetadataExtractor.extract(doc);
+		const metadata = MetadataExtractor.extract(doc, html); // 传 raw HTML 用于提取 create_time / pass raw HTML for create_time extraction
 
 		// 内容：分平台转换（findConverter 始终返回 converter，含 DefuddleConverter 兜底）
 		// Content: platform-specific conversion (findConverter always returns a converter)
