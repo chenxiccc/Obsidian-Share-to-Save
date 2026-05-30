@@ -32,6 +32,10 @@ export const STRINGS: Record<string, { zh: string; en: string }> = {
 		zh: '第 ${line} 行链接格式无效: ${url}',
 		en: 'Invalid URL on line ${line}: ${url}',
 	},
+	'modal.settings': {
+		zh: '打开插件设置',
+		en: 'Open plugin settings',
+	},
 	'menu.button': {
 		zh: '保存到 Share to Save',
 		en: 'Save to Share to Save',

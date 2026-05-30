@@ -195,7 +195,7 @@ export class HeadlessExtractor {
 
 		while (Date.now() - start < CONTENT_POLL_MAX_MS) {
 			try {
-				const hasContent: boolean = await win.webContents.executeJavaScript(
+				const hasContent = await win.webContents.executeJavaScript(
 					`(function() {
 						var selectors = ${JSON.stringify(CONTENT_SELECTORS)};
 						for (var i = 0; i < selectors.length; i++) {
@@ -209,7 +209,7 @@ export class HeadlessExtractor {
 						}
 						return false;
 					})()`,
-				);
+			) as boolean;
 				if (hasContent) break;
 			} catch {
 				// executeJavaScript 在页面未就绪时可能抛异常
@@ -230,7 +230,7 @@ export class HeadlessExtractor {
 		try {
 			const html: string = await win.webContents.executeJavaScript(
 				'document.documentElement.outerHTML',
-			);
+		) as string;
 			return html;
 		} catch {
 			return null;

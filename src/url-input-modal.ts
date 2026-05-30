@@ -31,6 +31,16 @@ export class UrlInputModal extends Modal {
 		setIcon(iconEl, 'cloud-download');
 		titleEl.createSpan({ text: this.t('modal.title') });
 
+		const settingsBtn = titleEl.createSpan({ cls: 'sts-modal-title-settings' });
+		setIcon(settingsBtn, 'settings');
+		settingsBtn.setAttribute('aria-label', this.t('modal.settings'));
+		settingsBtn.addEventListener('click', () => {
+			this.close();
+			const setting = this.app as unknown as { setting: { open: () => void; openTabById: (id: string) => void } };
+			setting.setting.open();
+			setting.setting.openTabById('share-to-save');
+		});
+
 		// ── 输入区 / Input area ──
 		const textareaEl = contentEl.createEl('textarea', {
 			attr: {

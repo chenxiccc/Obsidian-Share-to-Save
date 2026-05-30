@@ -17,6 +17,19 @@
 	vertical-align: middle;
 }
 
+.sts-modal-title-settings {
+	display: inline-flex;
+	vertical-align: middle;
+	margin-left: 4px;
+	cursor: pointer;
+	opacity: 0.7;
+	color: var(--text-muted);
+}
+
+.sts-modal-title-settings:hover {
+	opacity: 1;
+}
+
 /* ── 输入区 / Input area ── */
 
 .sts-url-input-modal textarea.sts-url-textarea {
