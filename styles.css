@@ -102,8 +102,8 @@
 
 /* ── 工具类 / Utility classes ── */
 
-.sts-hidden {
-	display: none !important;
+.sts-url-error.sts-hidden {
+	display: none;
 }
 
 /* ── 设置页流程图 / Settings page flow diagram ── */
