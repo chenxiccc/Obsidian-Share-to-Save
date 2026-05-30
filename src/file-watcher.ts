@@ -12,9 +12,6 @@ import { Notice } from 'obsidian';
 import type { QueueManager } from './queue-manager';
 import type { Downloader } from './downloader';
 
-/** 简单的 sleep / Simple sleep */
-const sleep = (ms: number): Promise<void> => new Promise(resolve => setTimeout(resolve, ms));
-
 export class FileWatcher {
 	private timerId: ReturnType<typeof setTimeout> | null = null;
 	private isProcessing = false; // 防止并发处理 / Prevent concurrent processing
@@ -74,7 +71,7 @@ export class FileWatcher {
 		this.currentIntervalMs = interval;
 		this.timerId = setTimeout(() => {
 			this.timerId = null;
-			this.check().then(() => this.scheduleNext());
+			void this.check().then(() => this.scheduleNext());
 		}, interval);
 	}
 

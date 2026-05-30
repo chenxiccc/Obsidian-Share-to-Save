@@ -41,6 +41,35 @@ const CONTENT_SELECTORS = [
 	'#app',
 ];
 
+/**
+ * Electron BrowserWindow 的最小接口定义
+ * Minimal interface for Electron BrowserWindow
+ */
+interface ElectronBrowserWindow {
+	webContents: {
+		setUserAgent(ua: string): void;
+		once(event: string, callback: () => void): void;
+		executeJavaScript(code: string): Promise<unknown>;
+	};
+	loadURL(url: string, options?: Record<string, unknown>): Promise<void>;
+	isDestroyed(): boolean;
+	close(): void;
+}
+
+/** Electron BrowserWindow 构造函数 / Electron BrowserWindow constructor */
+interface ElectronBrowserWindowConstructor {
+	new (options: {
+		width: number;
+		height: number;
+		show: boolean;
+		webPreferences: {
+			partition: string;
+			nodeIntegration: boolean;
+			contextIsolation: boolean;
+		};
+	}): ElectronBrowserWindow;
+}
+
 export class HeadlessExtractor {
 	/**
 	 * 尝试通过 headless BrowserWindow 获取 JS 渲染后的完整页面 HTML
@@ -55,11 +84,11 @@ export class HeadlessExtractor {
 	 * @returns 完整的 document.documentElement.outerHTML，失败返回 null
 	 */
 	async extractRenderedHtml(url: string): Promise<string | null> {
-		// eslint-disable-next-line @typescript-eslint/no-require-imports
-		let RemoteBrowserWindow: any;
+		let RemoteBrowserWindow: ElectronBrowserWindowConstructor | undefined;
 		try {
-			const { remote } = require('electron');
-			RemoteBrowserWindow = remote.BrowserWindow;
+			// eslint-disable-next-line @typescript-eslint/no-require-imports
+			const electron = require('electron') as { remote: { BrowserWindow: ElectronBrowserWindowConstructor } };
+			RemoteBrowserWindow = electron.remote.BrowserWindow;
 		} catch {
 			return null;
 		}
@@ -67,7 +96,7 @@ export class HeadlessExtractor {
 			return null;
 		}
 
-		let win: any = null;
+		let win: ElectronBrowserWindow | null = null;
 		try {
 			win = new RemoteBrowserWindow({
 				width: 1,
@@ -86,13 +115,11 @@ export class HeadlessExtractor {
 			const html = await this.waitForContentAndExtract(win);
 			// 验证码检测：微信反爬验证页不具备有效内容 / Captcha detection: WeChat anti-crawl page has no valid content
 			if (html && HeadlessExtractor.hasCaptcha(html)) {
-				// eslint-disable-next-line no-console
 				console.warn('Share to Save: 检测到微信验证码页面，建议稍后重试 / Detected WeChat captcha page, try again later');
 				return null;
 			}
 			return html;
 		} catch (err) {
-			// eslint-disable-next-line no-console
 			console.warn('Share to Save: Headless 提取失败 / Headless extraction failed:', err);
 			return null;
 		} finally {
@@ -126,7 +153,7 @@ export class HeadlessExtractor {
 	 * 加载 URL 并等待页面加载完成（或超时）
 	 * Load URL and wait for page to finish loading (or timeout)
 	 */
-	private loadUrlWithTimeout(win: any, url: string): Promise<void> {
+	private loadUrlWithTimeout(win: ElectronBrowserWindow, url: string): Promise<void> {
 		return new Promise<void>((resolve) => {
 			const timer = setTimeout(() => resolve(), LOAD_TIMEOUT_MS);
 
@@ -163,7 +190,7 @@ export class HeadlessExtractor {
 	 * 参考 ima-copilot-sync HeadlessExtractor.waitForContentAndExtract
 	 * Based on ima-copilot-sync's HeadlessExtractor.waitForContentAndExtract
 	 */
-	private async waitForContentAndExtract(win: any): Promise<string | null> {
+	private async waitForContentAndExtract(win: ElectronBrowserWindow): Promise<string | null> {
 		const start = Date.now();
 
 		while (Date.now() - start < CONTENT_POLL_MAX_MS) {
@@ -213,7 +240,7 @@ export class HeadlessExtractor {
 	/**
 	 * 销毁 BrowserWindow / Destroy BrowserWindow
 	 */
-	private destroyWindow(win: any): void {
+	private destroyWindow(win: ElectronBrowserWindow | null): void {
 		if (!win || win.isDestroyed()) return;
 		try {
 			win.close();

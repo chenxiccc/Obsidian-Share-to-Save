@@ -251,7 +251,6 @@ export class ImageHandler {
 			markdown = markdown.replace(full, wikilink);
 			} catch (err) {
 				// 单张图片下载失败不影响整体 / Single image failure doesn't abort the whole process
-				// eslint-disable-next-line no-console
 				console.warn(`Share to Save: 附件下载失败 / Attachment download failed: ${url}`, err);
 			}
 		}

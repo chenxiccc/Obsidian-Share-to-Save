@@ -29,16 +29,6 @@ export interface ContentConverter {
 	convert(doc: Document, url: string, rawHtml?: string): ConvertResult;
 }
 
-// ─── 微信常量 / WeChat constants ─────────────────────────────────────────────
-
-/** 微信内容容器选择器（参考 ima-copilot-sync WECHAT_CONTENT_SELECTORS） */
-const WECHAT_CONTAINERS = [
-	'#js_content', '.rich_media_content', '.share_content_page',
-	'#img_list',  // hidden 占位符，非真实图片来源，仅后备匹配 / hidden placeholder, not real image source, fallback only
-	'#js_video_page_title', '#js_audio_title', '#audio_panel_area',
-	'#js_text_title', '#js_novel_card', '#img-content', '.rich_media',
-];
-
 const SYSTEM_IMG = ['pic_blank.gif', 'res.wx.qq.com/mmbizappmsg'];
 
 /**
@@ -302,8 +292,9 @@ class WeChatConverter implements ContentConverter {
 		// seen 预填充：收集已处理容器内图片 URL，防 swiper 循环复制和 Turndown 重复
 		// Seen pre-fill: collect image URLs from processed containers to prevent swiper loop dupes
 		const prefillContainers = doc.querySelectorAll('.img_swiper_area img, #js_content img');
-		for (const img of Array.from(prefillContainers)) {
-			const url = img.getAttribute('data-src') || (img as HTMLImageElement).src;
+		for (const el of Array.from(prefillContainers)) {
+			const img = el as HTMLImageElement;
+			const url = img.getAttribute('data-src') || img.src;
 			if (url && /^https?:\/\//.test(url)) {
 				seen.add(normalizeForDedup(url));
 			}
@@ -324,7 +315,7 @@ class WeChatConverter implements ContentConverter {
 			const dedupKey = normalizeForDedup(url);
 			if (seen.has(dedupKey)) continue;
 			seen.add(dedupKey);
-			const rawAlt = (img as HTMLImageElement).alt || '';
+			const rawAlt = img.alt || '';
 			const alt = rawAlt ? this.getTurndown().escape(rawAlt.replace(/\s+/g, ' ').trim()) : '';
 			const escapedUrl = escapeLinkDestination(url);
 			parts.push(`![${alt}](${escapedUrl})`);
@@ -404,7 +395,7 @@ class WeChatConverter implements ContentConverter {
 				const href = el.getAttribute('href') || '';
 				const img = el.querySelector('img');
 				const imgUrl = img ? (img.getAttribute('data-src') || img.getAttribute('src') || '') : '';
-				const imgAlt = img ? ((img as HTMLImageElement).alt || '') : '';
+				const imgAlt = img ? (img.alt || '') : '';
 				const rawText = (el.textContent || '').trim();
 				const textOnly = rawText.replace(imgAlt, '').replace(/\s+/g, ' ').trim();
 				if (href && /^https?:\/\//.test(href) && textOnly) {
@@ -424,6 +415,35 @@ class WeChatConverter implements ContentConverter {
 		this.turndownInstance = td;
 		return td;
 	}
+}
+
+// ─── 小红书类型 / XHS Types ──────────────────────────────────────────────────
+
+interface XhsNoteImage {
+	urlDefault?: string;
+	url?: string;
+}
+
+interface XhsNoteUser {
+	nickname?: string;
+	userId?: string;
+}
+
+interface XhsNote {
+	type?: string;
+	desc?: string | string[];
+	imageList?: XhsNoteImage[];
+	user?: XhsNoteUser;
+}
+
+interface XhsNoteDetailMap {
+	[noteId: string]: { note?: XhsNote };
+}
+
+interface XhsInitialState {
+	note?: {
+		noteDetailMap?: XhsNoteDetailMap;
+	};
 }
 
 // ─── 小红书转换器 / Xiaohongshu Converter ────────────────────────────────────
@@ -497,7 +517,7 @@ class XiaohongshuConverter implements ContentConverter {
 
 		// author 从 note.user 提取（MetadataExtractor 的 meta 标签在 XHS 为空）
 		// author from note.user (MetadataExtractor meta tags are empty on XHS)
-		const user = note.user as { nickname?: string; userId?: string } | undefined;
+		const user = note.user;
 		if (user?.nickname) {
 			metadataPatch.author = user.nickname;
 		}
@@ -515,7 +535,7 @@ class XiaohongshuConverter implements ContentConverter {
 	 * 正则 + lastIndexOf("}") 截断，与 all-in-obs / xiaohongshu-importer / ob-Plugin 一致
 	 * Regex + lastIndexOf("}") truncation, identical to all-in-obs / xiaohongshu-importer / ob-Plugin
 	 */
-	private parseInitialState(html: string): any | null {
+	private parseInitialState(html: string): XhsInitialState | null {
 		const match = html.match(/window\.__INITIAL_STATE__\s*=\s*([\s\S]*?)<\/script>/i);
 		if (!match?.[1]) return null;
 		try {
@@ -530,7 +550,7 @@ class XiaohongshuConverter implements ContentConverter {
 			}
 			// 替换 JSON 中非法的 JS 字面量 / Replace illegal JS literals in JSON
 			const cleaned = jsonStr.replace(/undefined/g, 'null').replace(/\bNaN\b/g, 'null');
-			return JSON.parse(cleaned);
+			return JSON.parse(cleaned) as XhsInitialState;
 		} catch {
 			return null;
 		}

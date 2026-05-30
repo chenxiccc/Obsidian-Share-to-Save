@@ -48,19 +48,19 @@ export class UrlInputModal extends Modal {
 
 		// ── 错误提示 / Error hint ──
 		this.errorEl = contentEl.createDiv({ cls: 'sts-url-error' });
-		this.errorEl.style.display = 'none';
+		this.errorEl.addClass('sts-hidden');
 
 		// ── 底部按钮 / Bottom button ──
 		const buttonRow = contentEl.createDiv({ cls: 'sts-button-row' });
 		const saveBtn = buttonRow.createDiv({ cls: 'sts-save-btn' });
 		saveBtn.setText(this.t('modal.saveNow'));
-		saveBtn.addEventListener('click', () => this.handleSubmit());
+		saveBtn.addEventListener('click', () => { void this.handleSubmit(); });
 
 		// Enter 提交 / Enter to submit
 		textareaEl.addEventListener('keydown', (e: KeyboardEvent) => {
 			if (e.key === 'Enter' && !e.shiftKey) {
 				e.preventDefault();
-				this.handleSubmit();
+				void this.handleSubmit();
 			}
 		});
 	}
@@ -95,11 +95,11 @@ export class UrlInputModal extends Modal {
 
 		if (errors.length > 0) {
 			this.errorEl.textContent = errors.join('\n');
-			this.errorEl.style.display = 'block';
+			this.errorEl.removeClass('sts-hidden');
 			return;
 		}
 
-		this.errorEl.style.display = 'none';
+		this.errorEl.addClass('sts-hidden');
 		this.close();
 		await this.onSave(text);
 	}

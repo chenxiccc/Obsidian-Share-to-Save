@@ -136,7 +136,9 @@ export class ShareMenuInjector {
 	 */
 	private dismissMenu(menu: HTMLElement): void {
 		// 点击取消按钮来关闭菜单 / Click cancel button to close menu
-		const cancelBtn = menu.querySelector('[data-section="danger"]') as HTMLElement | null;
-		cancelBtn?.click();
+		const cancelBtn = menu.querySelector('[data-section="danger"]');
+		if (cancelBtn instanceof HTMLElement) {
+			cancelBtn.click();
+		}
 	}
 }

@@ -65,7 +65,6 @@ export default class ShareToSavePlugin extends Plugin {
 				this.queueManager,
 				this.downloader,
 				(msg) => {
-					// eslint-disable-next-line no-console
 					console.debug(`Share to Save: ${msg}`);
 				},
 				() => this.getPollIntervalMs(),
@@ -91,7 +90,7 @@ export default class ShareToSavePlugin extends Plugin {
 		this.addSettingTab(new ShareToSaveSettingTab(this.app, this, this.t));
 	}
 
-	async onunload(): Promise<void> {
+	onunload(): void {
 		this.shareMenuInjector?.stop();
 		this.fileWatcher?.stop();
 	}
@@ -206,7 +205,7 @@ export default class ShareToSavePlugin extends Plugin {
 	}
 
 	async loadSettings(): Promise<void> {
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData() as Partial<ShareToSaveSettings>);
 	}
 
 	async saveSettings(): Promise<void> {

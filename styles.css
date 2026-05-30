@@ -86,3 +86,16 @@
 	/* 复用 Obsidian 原生 .menu-item 样式，无需额外样式 */
 	/* Reuses Obsidian native .menu-item styles, no additional styles needed */
 }
+
+/* ── 工具类 / Utility classes ── */
+
+.sts-hidden {
+	display: none !important;
+}
+
+/* ── 设置页流程图 / Settings page flow diagram ── */
+
+.sts-userflow-container img {
+	width: 100%;
+	max-width: 600px;
+}

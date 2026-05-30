@@ -243,7 +243,7 @@ export class Downloader {
 				if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
 					const redirectUrl = new URL(res.headers.location, requestUrl).toString();
 					res.resume();
-					this.doNodeFetch(redirectUrl, redirectCount + 1, referer).then(resolve);
+					void this.doNodeFetch(redirectUrl, redirectCount + 1, referer).then(resolve);
 					return;
 				}
 

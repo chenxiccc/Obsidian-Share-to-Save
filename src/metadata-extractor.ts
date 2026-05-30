@@ -191,7 +191,7 @@ export class MetadataExtractor {
 		const scripts = Array.from(doc.querySelectorAll('script[type="application/ld+json"]'));
 		for (const script of scripts) {
 			try {
-				const data = JSON.parse(script.textContent || '');
+				const data = JSON.parse(script.textContent || '') as Record<string, unknown>;
 				// 查找 Article/WebPage/BlogPosting 等类型
 				// Look for Article/WebPage/BlogPosting types
 				const graph = data?.['@graph'];
@@ -212,7 +212,8 @@ export class MetadataExtractor {
 	private static isContentSchema(data: unknown): data is Record<string, unknown> {
 		if (!data || typeof data !== 'object') return false;
 		const d = data as Record<string, unknown>;
-		const type = String(d['@type'] || '');
+		const typeVal = d['@type'];
+		const type = typeof typeVal === 'string' ? typeVal : '';
 		return /Article|WebPage|BlogPosting|NewsArticle|Blog|CreativeWork/i.test(type);
 	}
 
