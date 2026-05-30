@@ -27,7 +27,7 @@ export class ShareToSaveSettingTab extends PluginSettingTab {
 		const { containerEl } = this;
 		containerEl.empty();
 
-		// ── 使用说明 / Usage Instructions ──
+// ── 使用说明 / Usage Instructions ──
 		const headingEl = containerEl.createEl('h2');
 		headingEl.setText(this.t('settings.usage.heading'));
 
@@ -44,6 +44,17 @@ export class ShareToSaveSettingTab extends PluginSettingTab {
 		} else {
 			descEl.setText(content);
 		}
+
+		// ── 用户流程图 / User flow diagram ──
+		const imgContainer = containerEl.createDiv({ cls: 'sts-userflow-container' });
+		const img = imgContainer.createEl('img', {
+			attr: {
+				src: 'https://raw.githubusercontent.com/chenxiccc/Obsidian-Share-to-Save/main/images/UserFlow.png',
+				alt: 'User Flow',
+			},
+		});
+		img.style.width = '100%';
+		img.style.maxWidth = '600px';
 
 		// ── 保存文件夹 / Output folder ──
 		new Setting(containerEl)

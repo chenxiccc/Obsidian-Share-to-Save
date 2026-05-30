@@ -1,5 +1,7 @@
 # Share to Save
 
+![User Flow](images/UserFlow.png)
+
 Obsidian 插件 — 将分享的网页 URL 自动下载为 Markdown 笔记。
 
 **手机端分享** → **桌面端自动下载** → **保存到你的知识库**
