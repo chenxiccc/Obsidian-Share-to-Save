@@ -21,8 +21,8 @@ export const STRINGS: Record<string, { zh: string; en: string }> = {
 		en: 'Save URL',
 	},
 	'modal.placeholder': {
-		zh: '每行一个网址，可粘贴含中文的分享文本...',
-		en: 'One URL per line, or paste share text...',
+		zh: '每行一个网址，可粘贴含文字的分享文本...',
+		en: 'One URL per line, or paste share text with letters...',
 	},
 	'modal.saveNow': {
 		zh: '立即保存',
@@ -31,6 +31,10 @@ export const STRINGS: Record<string, { zh: string; en: string }> = {
 	'modal.invalidUrl': {
 		zh: '第 ${line} 行链接格式无效: ${url}',
 		en: 'Invalid URL on line ${line}: ${url}',
+	},
+	'modal.settings': {
+		zh: '打开插件设置',
+		en: 'Open plugin settings',
 	},
 	'menu.button': {
 		zh: '保存到 Share to Save',

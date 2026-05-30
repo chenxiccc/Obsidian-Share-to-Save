@@ -5,39 +5,96 @@
 
 /* ── URL 输入模态框 / URL input modal ── */
 
+.sts-url-input-modal {
+	max-width: 520px;
+}
+
+/* ── 设置按钮：绝对定位在关闭按钮左侧 / Settings button: absolute positioned left of close button ── */
+
+.sts-modal-settings {
+	position: absolute;
+	top: 6px;
+	right: 40px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 28px;
+	height: 28px;
+	border-radius: var(--radius-s);
+	color: var(--text-muted);
+	cursor: pointer;
+	opacity: 0.7;
+	z-index: 10;
+}
+
+.sts-modal-settings:hover {
+	opacity: 1;
+	background-color: var(--background-modifier-hover);
+}
+
+/* ── 输入区 / Input area ── */
+
 .sts-url-input-modal textarea.sts-url-textarea {
 	width: 100%;
-	min-height: 80px;
+	min-height: 120px;
 	font-family: var(--font-monospace);
-	font-size: 0.9em;
-	padding: 8px;
+	font-size: 0.88em;
+	padding: 14px;
 	border: 1px solid var(--background-modifier-border);
-	border-radius: 4px;
-	background: var(--background-primary);
+	border-radius: 8px;
+	background: var(--background-secondary);
 	color: var(--text-normal);
 	resize: vertical;
+	transition: border-color 0.2s, box-shadow 0.2s;
+	box-sizing: border-box;
 }
+
+.sts-url-input-modal textarea.sts-url-textarea:focus {
+	border-color: var(--interactive-accent);
+	box-shadow: 0 0 0 2px rgba(var(--interactive-accent-rgb), 0.15);
+}
+
+.sts-url-input-modal textarea.sts-url-textarea::placeholder {
+	color: var(--text-faint);
+}
+
+/* ── 错误提示 / Error hint ── */
+
+.sts-url-input-modal .sts-url-error {
+	color: var(--text-error);
+	font-size: 0.85em;
+	margin-top: 8px;
+	padding: 0 2px;
+	line-height: 1.5;
+}
+
+/* ── 底部按钮 / Bottom button row ── */
 
 .sts-url-input-modal .sts-button-row {
 	display: flex;
+	align-items: center;
 	justify-content: center;
-	margin-top: 16px;
+	gap: 12px;
+	margin-top: 20px;
+	padding-top: 16px;
+	border-top: 1px solid var(--background-modifier-border);
 }
 
-.sts-url-input-modal .sts-button-row button {
-	min-width: 200px;
-	padding: 8px 32px;
-	font-size: 1.05em;
+.sts-url-input-modal .sts-save-btn {
+	padding: 8px 40px;
+	font-size: 0.95em;
+	font-weight: 500;
+	border-radius: 6px;
+	background-color: var(--interactive-accent);
+	color: var(--text-on-accent);
+	cursor: pointer;
+	transition: background-color 0.15s, box-shadow 0.15s;
+	user-select: none;
 }
 
-.sts-url-input-modal .sts-url-error {
-	color: #c62828;
-	background: #ffebee;
-	border: 1px solid #ef9a9a;
-	border-radius: 4px;
-	padding: 6px 10px;
-	margin-top: 10px;
-	font-size: 0.85em;
+.sts-url-input-modal .sts-save-btn:hover {
+	background-color: var(--interactive-accent-hover);
+	box-shadow: 0 2px 8px rgba(var(--interactive-accent-rgb), 0.25);
 }
 
 /* ── 分享菜单注入按钮（移动端）/ Share menu injected button (mobile) ── */

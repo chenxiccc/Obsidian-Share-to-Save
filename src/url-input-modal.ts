@@ -3,7 +3,7 @@
  * URL input modal: user pastes share text, validates URL format, then processes
  */
 
-import { Modal, App, ButtonComponent } from 'obsidian';
+import { Modal, App, setIcon } from 'obsidian';
 import type { Translator } from './i18n';
 import { extractUrl, isValidUrl } from './url-extractor';
 
@@ -21,14 +21,27 @@ export class UrlInputModal extends Modal {
 	}
 
 	onOpen(): void {
-		const { contentEl } = this;
+		const { contentEl, titleEl, modalEl } = this;
 		contentEl.empty();
 		contentEl.addClass('sts-url-input-modal');
 
-		// 标题 / Title
-		contentEl.createEl('h3', { text: this.t('modal.title') });
+		// ── 标题：复用 Obsidian 原生 .modal-title，只改文字 / Title: reuse Obsidian native .modal-title ──
+		titleEl.empty();
+		titleEl.createSpan({ text: this.t('modal.title') });
 
-		// 文本输入区 / Text input area
+		// ── 设置按钮：放在 modalEl 上，绝对定位到关闭按钮左侧 / Settings button: positioned left of close button ──
+		const settingsBtn = modalEl.createDiv({ cls: 'sts-modal-settings' });
+		setIcon(settingsBtn, 'settings');
+		settingsBtn.setAttribute('aria-label', this.t('modal.settings'));
+		settingsBtn.addEventListener('click', () => {
+			this.close();
+			// @ts-ignore - setting is available at runtime but not in public API
+			this.app.setting.open();
+			// @ts-ignore - openTabById is available at runtime
+			this.app.setting.openTabById('share-to-save');
+		});
+
+		// ── 输入区 / Input area ──
 		const textareaEl = contentEl.createEl('textarea', {
 			attr: {
 				placeholder: this.t('modal.placeholder'),
@@ -38,24 +51,20 @@ export class UrlInputModal extends Modal {
 		});
 		this.textarea = textareaEl;
 
-		// 预填待处理 URL / Pre-fill pending URLs
 		if (this.initialText) {
 			textareaEl.value = this.initialText;
 		}
-
-		// 自动聚焦 / Auto focus
 		setTimeout(() => textareaEl.focus(), 50);
 
-		// 错误提示区（初始隐藏） / Error message area (initially hidden)
+		// ── 错误提示 / Error hint ──
 		this.errorEl = contentEl.createDiv({ cls: 'sts-url-error' });
 		this.errorEl.style.display = 'none';
 
-		// 底部"立即保存"按钮 / Bottom "Save now" button
+		// ── 底部按钮 / Bottom button ──
 		const buttonRow = contentEl.createDiv({ cls: 'sts-button-row' });
-		new ButtonComponent(buttonRow)
-			.setButtonText(this.t('modal.saveNow'))
-			.setCta()
-			.onClick(() => this.handleSubmit());
+		const saveBtn = buttonRow.createDiv({ cls: 'sts-save-btn' });
+		saveBtn.setText(this.t('modal.saveNow'));
+		saveBtn.addEventListener('click', () => this.handleSubmit());
 
 		// Enter 提交 / Enter to submit
 		textareaEl.addEventListener('keydown', (e: KeyboardEvent) => {
@@ -79,7 +88,6 @@ export class UrlInputModal extends Modal {
 			return;
 		}
 
-		// 逐行校验 / Validate per line
 		const lines = text.split('\n');
 		const errors: string[] = [];
 
@@ -88,21 +96,19 @@ export class UrlInputModal extends Modal {
 			if (!line) continue;
 
 			const url = extractUrl(line);
-			if (!url) continue; // 无 URL 的行静默跳过 / Silently skip lines without URLs
+			if (!url) continue;
 
 			if (!isValidUrl(url)) {
 				errors.push(this.t('modal.invalidUrl', { line: String(i + 1), url }));
 			}
 		}
 
-		// 存在格式无效的 URL → 显示错误，阻断提交 / Show errors and block submission
 		if (errors.length > 0) {
 			this.errorEl.textContent = errors.join('\n');
 			this.errorEl.style.display = 'block';
 			return;
 		}
 
-		// 全部校验通过 / All lines validated
 		this.errorEl.style.display = 'none';
 		this.close();
 		await this.onSave(text);
