@@ -14,9 +14,9 @@ Share to Save 是一款 Obsidian 插件，将分享的网页 URL 自动下载为
 
 ## Typical Usage / 典型用法
 
-- **WeChat Articles / 微信文章** — Share an article from WeChat Official Accounts to Obsidian, and it will be saved with full text, images, and metadata intact.
-- **Xiaohongshu (RED) Posts / 小红书笔记** — Share a RED post link, and both the text content and all images will be extracted and saved.
 - **General Web Pages / 通用网页** — Any standard article page (news, blogs, documentation) works out of the box via the built-in defuddle fallback.
+- **WeChat Articles / 微信文章** — Share an article from WeChat Official Accounts to Obsidian, and it will be saved with full text, images, and metadata intact./本地保存微信公众号文章，包括图片。
+- **Xiaohongshu (RED) Posts / 小红书笔记** — Share a RED post link, and both the text content and all images will be extracted and saved./本地保存小红书笔记，包括图片。
 
 ---
 
@@ -28,17 +28,9 @@ Share to Save 是一款 Obsidian 插件，将分享的网页 URL 自动下载为
 4. The desktop plugin detects the entry and renders the page with headless Chromium
 5. Body text + images are extracted and saved as a `.md` note
 6. 手机端分享 URL 到 Obsidian（系统分享菜单或直接粘贴）
-7. URL 写入 `tobesave.json` 队列文件
+7. URL 写入 Share-to-Save文件夹下 队列文件
 8. 同步到桌面端（见下方[同步方式](#sync-methods--同步方式)）
-9. 桌面端插件检测到条目，使用 headless Chromium 渲染页面
-10. 提取正文内容 + 图片，保存为 `.md` 笔记
-
-## Features / 功能
-
-- **Mobile share receiver / 移动端分享接收** — Share menu button injected via DOM mutation observer on Obsidian mobile
-- **Desktop processing / 桌面端处理** — Auto-poll the queue file (1-hour interval) or trigger manually
-- **Headless Chromium rendering / 无头浏览器渲染** — Handles JS-rendered pages (e.g., WeChat articles)
-- **Image localization / 图片本地化** — Download external images to local `attachments/` folder, replace with wikilinks
+9. 桌面端插件检测到条目，自动获取网页全部内容，保存为 `.md` 笔记
 
 ## Sync Methods / 同步方式
 
@@ -74,30 +66,10 @@ The plugin relies on file sync to transfer the queue file from mobile to desktop
 - Paste text containing a URL, or paste a URL directly
 - Click "Save Now" / 点击"立即保存"
 
-### Mobile (System Share) / 移动端（系统分享）
+### Mobile (Share to obsidian or add links in the plugin) / 移动端（分享到Obsidian或在插件内添加链接）
 
 - Share a web page from any app → select Obsidian
 - Or tap the ribbon button inside Obsidian and paste the text
-
-### Queue File Location / 队列文件位置
-
-```
-{vault}/.obsidian/plugins/share-to-save/tobesave.json
-```
-
-Format example / 格式示例：
-
-```json
-[{
-  "id": "uuid",
-  "url": "https://mp.weixin.qq.com/s/...",
-  "source": "mobile",
-  "status": "pending",
-  "createdAt": "2025-01-01T00:00:00",
-  "title": "",
-  "error": null
-}]
-```
 
 ## Settings / 设置
 
