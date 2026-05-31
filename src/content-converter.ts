@@ -2,8 +2,8 @@
  * 分平台内容转换器：HTML → Markdown
  * Platform-specific content converter: HTML → Markdown
  *
- * defuddle 负责元数据提取（title/author/published），
- * 转换器负责 HTML 内容 → Markdown（含图片在原文位置 + 补充提取）。
+ * MetadataExtractor 负责元数据提取，转换器通过 metadataPatch 可修正。
+ * 转换器负责 HTML 内容 → Markdown（含图片提取、代码块处理 + 补充提取）。
  */
 
 import TurndownService from 'turndown';
