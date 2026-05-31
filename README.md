@@ -1,12 +1,12 @@
+# [中文说明](#share-to-save中文)
+
 # Share to Save
 
 ![User Flow](images/UserFlow.png)
 
 An Obsidian plugin that automatically downloads shared web pages as Markdown notes.
 
-**Share from mobile / Add links** → **Auto-download on desktop** → **Save to your vault**
-
-[English](#typical-usage) | [中文](#share-to-save中文)
+**Share / Add links** **from mobile** → **Auto-download on desktop** → **Save to your vault**
 
 ## Typical Usage
 
