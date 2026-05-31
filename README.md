@@ -4,35 +4,24 @@
 
 An Obsidian plugin that automatically downloads shared web pages as Markdown notes.
 
-**Share from mobile/Add links** → **Auto-download on desktop** → **Save to your vault**
+**Share from mobile / Add links** → **Auto-download on desktop** → **Save to your vault**
 
-Share to Save 是一款 Obsidian 插件，将分享的网页 URL 自动下载为 Markdown 笔记。
+[English](#typical-usage) | [中文](#share-to-save中文)
 
-**手机端分享/添加链接** → **桌面端自动下载** → **保存到你的知识库**
+## Typical Usage
 
----
+- **General Web Pages** — Any standard article page (news, blogs, documentation) works out of the box via the built-in defuddle fallback.
+- **WeChat Articles** — Share an article from WeChat Official Accounts to Obsidian, and it will be saved with full text, images, and metadata intact.
+- **Xiaohongshu (RED) Posts** — Copy a RED post link, add the link in the plugin, and both the text content and all images will be extracted and saved.
 
-## Typical Usage / 典型用法
+## Workflow
 
-- **General Web Pages / 通用网页** — Any standard article page (news, blogs, documentation) works out of the box via the built-in defuddle fallback.
-- **WeChat Articles / 微信文章** — Share an article from WeChat Official Accounts to Obsidian, and it will be saved with full text, images, and metadata intact./本地保存微信公众号文章，包括图片。
-- **Xiaohongshu (RED) Posts / 小红书笔记** — Share a RED post link, and both the text content and all images will be extracted and saved./本地保存小红书笔记，包括图片。
+1. Share a URL to Obsidian on your mobile device (system share menu or paste into the plugin)
+2. URL is written to the queue file under the Share-to-Save plugin folder
+3. Sync to your desktop (see [Sync Methods](#sync-methods) below)
+4. The desktop plugin detects the entry and automatically fetches the full web content, saving it as a `.md` note
 
----
-
-## Workflow / 工作流程
-
-1. Share a URL to Obsidian on your mobile device (system share menu or paste)
-2. URL is written to the `tobesave.json` queue file
-3. Sync to your desktop (see [Sync Methods](#sync-methods--同步方式) below)
-4. The desktop plugin detects the entry and renders the page with headless Chromium
-5. Body text + images are extracted and saved as a `.md` note
-6. 手机端分享 URL 到 Obsidian（系统分享菜单或直接粘贴）
-7. URL 写入 Share-to-Save文件夹下 队列文件
-8. 同步到桌面端（见下方[同步方式](#sync-methods--同步方式)）
-9. 桌面端插件检测到条目，自动获取网页全部内容，保存为 `.md` 笔记
-
-## Sync Methods / 同步方式
+## Sync Methods
 
 The plugin relies on file sync to transfer the queue file from mobile to desktop. We recommend one of the following:
 
@@ -45,7 +34,64 @@ The plugin relies on file sync to transfer the queue file from mobile to desktop
 
 **Recommendation:** [Fast Note Sync](https://github.com/haierkeys/obsidian-fast-note-sync/) provides near-instant queue delivery — your desktop starts downloading within seconds of sharing on mobile. Unlike iCloud it works cross-platform, and unlike Syncthing it needs no separate daemon.
 
+## Usage
+
+### Desktop (Direct URL Input)
+
+- Click the left ribbon button (cloud download icon)
+- Paste text containing a URL, or paste a URL directly
+- Click "Save Now"
+
+### Mobile (Share to Obsidian or add links in the plugin)
+
+- Share a web page from any app → select Obsidian → Save to Share to Save
+- Or tap the ribbon button inside Obsidian and paste the text
+
+## Settings
+
+- **Output folder** — Directory for saved notes (default: `Share-to-Save`)
+- Attachments are saved to `{outputFolder}/attachments/`
+
+## Submitting Issues
+
+If you encounter extraction problems, please open an issue on [GitHub Issues](https://github.com/chenxiccc/obsidian-share-to-save/issues) with the following information:
+
+1. **The URL** — The specific link you tried to save (required)
+2. **What went wrong** — Which part was not extracted correctly? (title, author, body text, images, etc.)
+3. **Failure type** — Is it:
+   - **Cannot extract at all** (nothing saved, queue stuck, error message shown)
+   - **Extraction is wrong** (saved but content is incomplete, garbled, or incorrect)
+
+Providing a sample URL is essential — different pages on the same platform can have completely different HTML structures.
+
+## License
+
+MIT
+
 ---
+
+# Share to Save（中文）
+
+![用户流程图](images/UserFlow.png)
+
+Share to Save 是一款 Obsidian 插件，将分享的网页 URL 自动下载为 Markdown 笔记。
+
+**手机端分享 / 添加链接** → **桌面端自动下载** → **保存到你的知识库**
+
+## 典型用法
+
+- **通用网页** — 任何标准文章页面（新闻、博客、文档）均可通过内置 defuddle 兜底直接使用。
+- **微信文章** — 分享微信公众号文章到 Obsidian，本地保存包括图片在内的全部内容。
+- **小红书笔记** — 复制小红书链接，在插件中添加URL保存，本地保存笔记正文和全部图片。
+
+## 工作流程
+
+1. 手机端分享 URL 到 Obsidian（系统分享菜单 或 插件中粘贴添加URL）
+2. URL 写入 Share-to-Save 插件文件夹下的队列文件
+3. 同步到桌面端（见下方[同步方式](#同步方式)）
+4. 桌面端插件检测到条目，自动获取网页全部内容，保存为 `.md` 笔记
+
+## 同步方式
 
 插件依赖文件同步将队列文件从手机传输到桌面。推荐以下方式：
 
@@ -58,37 +104,25 @@ The plugin relies on file sync to transfer the queue file from mobile to desktop
 
 **推荐：**[Fast Note Sync](https://github.com/haierkeys/obsidian-fast-note-sync/) 可实现近乎即时的队列传送——手机端分享后几秒内桌面端即开始下载。相比 iCloud 支持跨平台，相比 Syncthing 无需额外后台进程。
 
-## Usage / 使用
+## 使用
 
-### Desktop (Direct URL Input) / 桌面端（直接输入 URL）
+### 桌面端（直接输入 URL）
 
-- Click the left ribbon button (cloud download icon)
-- Paste text containing a URL, or paste a URL directly
-- Click "Save Now" / 点击"立即保存"
+- 点击左侧 ribbon 按钮（云下载图标）
+- 粘贴包含 URL 的文本或直接粘贴 URL
+- 点击"立即保存"
 
-### Mobile (Share to obsidian or add links in the plugin) / 移动端（分享到Obsidian或在插件内添加链接）
+### 移动端（分享到 Obsidian 或在插件内添加链接）
 
-- Share a web page from any app → select Obsidian
-- Or tap the ribbon button inside Obsidian and paste the text
+- 在任意 App 中分享网页 → 选择 Obsidian → 保存到 Share to Save
+- 或点击 Obsidian 内的 ribbon 按钮，粘贴文本
 
-## Settings / 设置
+## 设置
 
-- **Output folder / 输出文件夹** — Directory for saved notes (default: `Sts`)
-- Attachments are saved to `{outputFolder}/attachments/`
+- **输出文件夹** — 笔记保存目录（默认 `Share-to-Save`）
+- 附件保存到 `{输出文件夹}/attachments/`
 
-## Submitting Issues / 提交 Issue
-
-If you encounter extraction problems, please open an issue on [GitHub Issues](https://github.com/chenxiccc/obsidian-share-to-save/issues) with the following information:
-
-1. **The URL** — The specific link you tried to save (required)
-2. **What went wrong** — Which part was not extracted correctly? (title, author, body text, images, etc.)
-3. **Failure type** — Is it:
-   - **Cannot extract at all** (nothing saved, queue stuck, error message shown)
-   - **Extraction is wrong** (saved but content is incomplete, garbled, or incorrect)
-
-Providing a sample URL is essential — different pages on the same platform can have completely different HTML structures.
-
----
+## 提交 Issue
 
 如有提取问题，请在 [GitHub Issues](https://github.com/chenxiccc/obsidian-share-to-save/issues) 提交，并提供以下信息：
 
@@ -100,6 +134,6 @@ Providing a sample URL is essential — different pages on the same platform can
 
 提供示例 URL 至关重要——同一平台的不同页面可能拥有完全不同的 HTML 结构。
 
-## License / 许可
+## 许可
 
 MIT
