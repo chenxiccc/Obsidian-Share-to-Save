@@ -4,47 +4,15 @@
  *
  * 仅桌面端可用（依赖 Electron remote.BrowserWindow）
  * Desktop only (depends on Electron remote.BrowserWindow)
- *
- * 参考 ima-copilot-sync 的 HeadlessExtractor 实现
- * Based on ima-copilot-sync's HeadlessExtractor implementation
  */
 
 import { CHROME_UA } from './types';
 
 const LOAD_TIMEOUT_MS = 30_000;
-const CONTENT_POLL_INTERVAL_MS = 500;
-const CONTENT_POLL_MAX_MS = 20_000;
 const BROWSER_PARTITION = 'persist:share-to-save';
+const FIRST_WAIT_MS = 5_000;
+const SECOND_WAIT_MS = 5_000;
 
-/**
- * 通用内容容器的 CSS 选择器列表（按优先级排序）
- * Generic content container CSS selector list (ordered by priority)
- */
-const CONTENT_SELECTORS = [
-	// 微信 / WeChat
-	'#js_content',
-	'.rich_media_content',
-	'.share_content_page',
-	// 通用文章 / Generic article
-	'article',
-	'[role="main"]',
-	'main',
-	'.post-content',
-	'.article-content',
-	'.entry-content',
-	'.content-body',
-	'.post-body',
-	'.markdown-body',
-	// 兜底 / Fallback
-	'.content',
-	'#content',
-	'#app',
-];
-
-/**
- * Electron BrowserWindow 的最小接口定义
- * Minimal interface for Electron BrowserWindow
- */
 interface ElectronBrowserWindow {
 	webContents: {
 		setUserAgent(ua: string): void;
@@ -56,7 +24,6 @@ interface ElectronBrowserWindow {
 	close(): void;
 }
 
-/** Electron BrowserWindow 构造函数 / Electron BrowserWindow constructor */
 interface ElectronBrowserWindowConstructor {
 	new (options: {
 		width: number;
@@ -71,18 +38,6 @@ interface ElectronBrowserWindowConstructor {
 }
 
 export class HeadlessExtractor {
-	/**
-	 * 尝试通过 headless BrowserWindow 获取 JS 渲染后的完整页面 HTML
-	 * Try to get JS-rendered full page HTML via headless BrowserWindow
-	 *
-	 * 返回完整 outerHTML，由调用方通过 DOMParser + contentSelector 提取内容
-	 * Returns full outerHTML; caller extracts content via DOMParser + contentSelector
-	 *
-	 * 参考 ima-copilot-sync tryHeadlessExtraction 实现
-	 * Based on ima-copilot-sync's tryHeadlessExtraction
-	 *
-	 * @returns 完整的 document.documentElement.outerHTML，失败返回 null
-	 */
 	async extractRenderedHtml(url: string): Promise<string | null> {
 		let RemoteBrowserWindow: ElectronBrowserWindowConstructor | undefined;
 		try {
@@ -92,30 +47,23 @@ export class HeadlessExtractor {
 		} catch {
 			return null;
 		}
-		if (!RemoteBrowserWindow) {
-			return null;
-		}
+		if (!RemoteBrowserWindow) return null;
 
 		let win: ElectronBrowserWindow | null = null;
 		try {
 			win = new RemoteBrowserWindow({
-				width: 1,
-				height: 1,
-				show: false,
+				width: 1, height: 1, show: false,
 				webPreferences: {
 					partition: BROWSER_PARTITION,
 					nodeIntegration: false,
 					contextIsolation: true,
 				},
 			});
-
 			win.webContents.setUserAgent(CHROME_UA);
 			await this.loadUrlWithTimeout(win, url);
-
 			const html = await this.waitForContentAndExtract(win);
-			// 验证码检测：微信反爬验证页不具备有效内容 / Captcha detection: WeChat anti-crawl page has no valid content
 			if (html && HeadlessExtractor.hasCaptcha(html)) {
-				console.warn('Share to Save: 检测到微信验证码页面，建议稍后重试 / Detected WeChat captcha page, try again later');
+				console.warn('Share to Save: 检测到微信验证码页面 / Detected WeChat captcha page');
 				return null;
 			}
 			return html;
@@ -127,52 +75,32 @@ export class HeadlessExtractor {
 		}
 	}
 
-	/**
-	 * 判断提取的 HTML 是否包含微信文章内容
-	 * Check if extracted HTML contains WeChat article content
-	 */
-	static hasWeChatContent(html: string): boolean {
-		for (const sel of CONTENT_SELECTORS) {
-			const key = sel.replace(/^[#.]/, '');
-			if (html.includes(key)) {
-				return true;
-			}
-		}
-		return false;
-	}
-
-	/**
-	 * 检测 HTML 是否为微信验证码/反爬页面 / Detect if HTML is a WeChat captcha/anti-crawl page
-	 */
 	static hasCaptcha(html: string): boolean {
 		const indicators = ['js_verify', 'verify_container', '环境异常', '请完成安全验证', '操作频繁'];
 		return indicators.some(ind => html.includes(ind));
 	}
 
 	/**
-	 * 加载 URL 并等待页面加载完成（或超时）
-	 * Load URL and wait for page to finish loading (or timeout)
+	 * 加载 URL 并等待 did-finish-load 或超时。
+	 * Load URL and wait for did-finish-load or timeout.
 	 */
 	private loadUrlWithTimeout(win: ElectronBrowserWindow, url: string): Promise<void> {
 		return new Promise<void>((resolve) => {
 			const timer = setTimeout(() => resolve(), LOAD_TIMEOUT_MS);
-
 			let finished = false;
-
-			win.webContents.once('did-finish-load', () => {
+			const onFinish = () => {
 				if (finished) return;
 				finished = true;
 				clearTimeout(timer);
 				resolve();
-			});
-
+			};
+			win.webContents.once('did-finish-load', onFinish);
 			win.webContents.once('did-fail-load', () => {
 				if (finished) return;
 				finished = true;
 				clearTimeout(timer);
 				resolve();
 			});
-
 			void win.loadURL(url, {
 				userAgent: CHROME_UA,
 				extraHeaders: [
@@ -184,68 +112,72 @@ export class HeadlessExtractor {
 	}
 
 	/**
-	 * 轮询内容容器出现后提取完整 outerHTML
-	 * Poll for content container to appear, then extract full outerHTML
+	 * 两阶段等待 + 内容增长检测：
+	 * 测量基线 body 文本 → 等 5s → 提取 HTML + 测量 body → 若增长不足 → 再等 5s → 再次提取。
 	 *
-	 * 参考 ima-copilot-sync HeadlessExtractor.waitForContentAndExtract
-	 * Based on ima-copilot-sync's HeadlessExtractor.waitForContentAndExtract
+	 * Two-stage wait + content growth detection:
+	 * Measure baseline body text → wait 5s → extract HTML + measure body → if not grown enough → wait 5s more → extract again.
+	 *
+	 * 这比固定阈值更可靠：SPA 空壳的导航栏文本不会随着 JS 渲染而增长，
+	 * 而真正的文章内容会让 body 文本大幅增长。
+	 * More reliable than fixed threshold: SPA shell nav text won't grow with JS rendering,
+	 * while real article content causes significant body text growth.
 	 */
 	private async waitForContentAndExtract(win: ElectronBrowserWindow): Promise<string | null> {
-		const start = Date.now();
+		// 基线 / Baseline
+		const baselineLen = await this.getBodyTextLength(win);
 
-		while (Date.now() - start < CONTENT_POLL_MAX_MS) {
-			try {
-				const hasContent = await win.webContents.executeJavaScript(
-					`(function() {
-						var selectors = ${JSON.stringify(CONTENT_SELECTORS)};
-						for (var i = 0; i < selectors.length; i++) {
-							try {
-								var el = document.querySelector(selectors[i]);
-								if (!el) continue;
-								var textLen = (el.textContent || '').trim().length;
-								var imgCount = el.querySelectorAll('img').length;
-								if (textLen > 30 || imgCount >= 2) return true;
-							} catch (e) { /* skip */ }
-						}
-						return false;
-					})()`,
-			) as boolean;
-				if (hasContent) break;
-			} catch {
-				// executeJavaScript 在页面未就绪时可能抛异常
-			}
-			await new Promise(r => setTimeout(r, CONTENT_POLL_INTERVAL_MS));
-		}
+		// 第一阶段 / Stage 1
+		await new Promise(r => setTimeout(r, FIRST_WAIT_MS));
+		const firstHtml = await this.extractHtml(win);
+		if (!firstHtml) return null;
 
-		// 触发基础懒加载（快速滚动，不等待——图片 URL 从 data-src 属性直接提取）
-		// Trigger basic lazy load (quick scroll, no wait — image URLs extracted from data-src attributes)
+		const currentLen = await this.getBodyTextLength(win);
+		// 内容显著增长？/ Content grew significantly?
+		if (currentLen > baselineLen * 2 && currentLen > 500) return firstHtml;
+
+		// 第二阶段 / Stage 2
+		await new Promise(r => setTimeout(r, SECOND_WAIT_MS));
+		const secondHtml = await this.extractHtml(win);
+		return secondHtml || firstHtml;
+	}
+
+	/**
+	 * 滚动触发懒加载 + 提取 outerHTML / Scroll to trigger lazy load + extract outerHTML
+	 */
+	private async extractHtml(win: ElectronBrowserWindow): Promise<string | null> {
 		try {
 			await win.webContents.executeJavaScript('window.scrollTo(0, document.body.scrollHeight)');
-			await new Promise(r => setTimeout(r, 300));
+			await new Promise(r => setTimeout(r, 500));
 			await win.webContents.executeJavaScript('window.scrollTo(0, 0)');
-		} catch {
-			// 滚动失败不影响提取 / Scroll failure doesn't block extraction
-		}
+			await new Promise(r => setTimeout(r, 500));
+		} catch { /* 滚动失败不阻塞 / scroll failure doesn't block */ }
 
 		try {
-			const html: string = await win.webContents.executeJavaScript(
+			return await win.webContents.executeJavaScript(
 				'document.documentElement.outerHTML',
-		) as string;
-			return html;
+			) as string;
 		} catch {
 			return null;
 		}
 	}
 
 	/**
-	 * 销毁 BrowserWindow / Destroy BrowserWindow
+	 * 获取 body.innerText 长度 / Get body.innerText length
 	 */
+	private async getBodyTextLength(win: ElectronBrowserWindow): Promise<number> {
+		try {
+			const len: number = await win.webContents.executeJavaScript(
+				'document.body ? (document.body.innerText || "").trim().length : 0',
+			) as number;
+			return len;
+		} catch {
+			return 0;
+		}
+	}
+
 	private destroyWindow(win: ElectronBrowserWindow | null): void {
 		if (!win || win.isDestroyed()) return;
-		try {
-			win.close();
-		} catch {
-			// 忽略关闭时的错误 / Ignore errors on close
-		}
+		try { win.close(); } catch { /* ignore */ }
 	}
 }

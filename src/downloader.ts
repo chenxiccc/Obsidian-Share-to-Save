@@ -8,7 +8,7 @@
 import { Vault, normalizePath } from 'obsidian';
 import type { ParsedContent, ProcessResult, ShareToSaveSettings, Metadata } from './types';
 import { CHROME_UA } from './types';
-import { sanitizeFilename } from './text-utils';
+import { sanitizeFilename, isMarkdownViable } from './text-utils';
 import { ImageHandler } from './image-handler';
 import type { Translator } from './i18n';
 import { HeadlessExtractor } from './headless-extractor';
@@ -40,98 +40,79 @@ export class Downloader {
 	}
 
 	/**
-	 * 处理单个 URL：获取 HTML → 统一管线 → 保存 .md
-	 * Process a single URL: acquire HTML → unified pipeline → save .md
+	 * 处理单个 URL：两阶段获取 → 统一管线 → 保存 .md
+	 * Process a single URL: two-phase acquisition → unified pipeline → save .md
 	 *
-	 * HTML 获取策略 / HTML acquisition strategy:
-	 *   微信 → headless 直连（Node.js 大概率触发反爬，避免浪费请求）
-	 *   其他 → Node.js https 优先 → SSR/质量检测 → headless 兜底
-	 *
-	 *   WeChat → headless directly (Node.js likely triggers anti-crawl)
-	 *   Others → Node.js https first → SSR/quality check → headless fallback
+	 * Phase 1: Node.js → pipeline → isMarkdownViable? → save
+	 * Phase 2: headless fallback (only if Phase 1 fails and not WeChat)
 	 */
 	async processUrl(url: string, stsId: string): Promise<ProcessResult> {
 		const cleanUrl = Downloader.stripWeChatTrackingParams(url);
-
 		const { html, canonicalUrl } = await this.acquireHtml(cleanUrl);
-
 		if (!html) {
 			return { success: false, error: '无法获取页面内容 / Failed to fetch page content' };
 		}
 
-		return this.processHtml(html, canonicalUrl, stsId);
+		// Phase 1: 转换 + 输出质量评估 / Convert + output quality assessment
+		const parsed = this.processDocToParsed(html, canonicalUrl);
+		if (parsed && isMarkdownViable(parsed.content)) {
+			return this.saveNote(parsed, canonicalUrl, stsId);
+		}
+
+		// Phase 2: Headless 兜底（微信已走 headless，跳过）/ Headless fallback
+		if (!Downloader.isWeChatUrl(cleanUrl)) {
+			const headlessHtml = await this.headlessExtractor.extractRenderedHtml(cleanUrl);
+			if (headlessHtml) {
+				const headlessParsed = this.processDocToParsed(headlessHtml, cleanUrl);
+				if (headlessParsed) {
+					return this.saveNote(headlessParsed, cleanUrl, stsId);
+				}
+			}
+		}
+
+		// Phase 1 有部分内容则尽力保存 / Best effort: save Phase 1 result
+		if (parsed) {
+			return this.saveNote(parsed, canonicalUrl, stsId);
+		}
+		return { success: false, error: '无法提取页面内容 / Failed to extract page content' };
 	}
 
 	/**
-	 * HTML 获取：根据 URL 选择策略
-	 * HTML acquisition: select strategy based on URL
+	 * 统一转换管线：HTML → DOMParser → Metadata → Converter → ParsedContent
+	 * Unified pipeline shared by Phase 1 and Phase 2. Pure computation, no side effects.
+	 */
+	private processDocToParsed(html: string, url: string): ParsedContent | null {
+		try {
+			const doc = new DOMParser().parseFromString(html, 'text/html');
+			const metadata = MetadataExtractor.extract(doc, html);
+			const converter = findConverter(url);
+			const result = converter.convert(doc, url, html);
+			Downloader.applyMetadataPatch(metadata, result.metadataPatch);
+			const content = result.markdown;
+			const imageUrls = Downloader.extractImageUrls(content);
+			return { ...metadata, content, imageUrls };
+		} catch (err) {
+			console.warn('Share to Save: 转换管线失败 / Pipeline failed:', err);
+			return null;
+		}
+	}
+
+	/**
+	 * HTML 获取：微信直连 headless，其他走 Node.js https。
+	 * HTML acquisition: WeChat → headless directly, others → Node.js https.
 	 */
 	private async acquireHtml(url: string): Promise<{ html: string | null; canonicalUrl: string }> {
-		// 微信：直接 headless / WeChat: straight to headless
 		if (Downloader.isWeChatUrl(url)) {
 			const html = await this.headlessExtractor.extractRenderedHtml(url);
 			return { html, canonicalUrl: url };
 		}
-
-		// 其他：Node.js https 优先 / Others: Node.js https first
 		const fetched = await this.fetchHtmlViaNodeJs(url);
-
-		if (!fetched) {
-			// Node.js 失败 → headless 兜底 / Node.js failed → headless fallback
-			const html = await this.headlessExtractor.extractRenderedHtml(url);
-			return { html, canonicalUrl: url };
-		}
-
-		if (Downloader.hasSsrState(fetched.html)) {
-			if (!Downloader.isMinimallyViable(fetched.html)) {
-				// SSR 框架返回空壳 → headless 兜底 / SSR shell → headless fallback
-				const fallback = await this.headlessExtractor.extractRenderedHtml(url);
-				if (fallback) return { html: fallback, canonicalUrl: url };
-			}
-			// SSR 页面且内容可用：保留原始 HTML（headless 可能丢失 __INITIAL_STATE__ 等数据）
-			// SSR page with viable content: keep raw HTML (headless may lose __INITIAL_STATE__ data)
-			return fetched;
-		}
-
-		if (Downloader.isQualityPoor(fetched.html)) {
-			// 质量差 → headless 兜底 / Poor quality → headless fallback
-			const fallback = await this.headlessExtractor.extractRenderedHtml(url);
-			if (fallback) {
-				return { html: fallback, canonicalUrl: url };
-			}
-		}
-
-		return fetched;
+		if (fetched) return fetched;
+		const html = await this.headlessExtractor.extractRenderedHtml(url);
+		return { html, canonicalUrl: url };
 	}
 
-	/**
-	 * 统一管线：HTML → DOMParser → metadata → converter → saveNote
-	 * Unified pipeline: HTML → DOMParser → metadata → converter → saveNote
-	 *
-	 * 所有平台在 HTML 获取后共享此管线
-	 * All platforms share this pipeline after HTML acquisition
-	 */
-	private async processHtml(html: string, url: string, stsId: string): Promise<ProcessResult> {
-		// DOMParser 解析 / Parse with DOMParser
-		const parser = new DOMParser();
-		const doc = parser.parseFromString(html, 'text/html');
 
-		// 元数据：MetadataExtractor 统一提取 / Metadata: unified via MetadataExtractor
-		const metadata = MetadataExtractor.extract(doc, html); // 传 raw HTML 用于提取 create_time / pass raw HTML for create_time extraction
-
-		// 内容：分平台转换（findConverter 始终返回 converter，含 DefuddleConverter 兜底）
-		// Content: platform-specific conversion (findConverter always returns a converter)
-		const converter = findConverter(url);
-		const result = converter.convert(doc, url, html);
-
-		// 应用平台元数据修正 / Apply platform metadata patches
-		Downloader.applyMetadataPatch(metadata, result.metadataPatch);
-
-		// 图片 URL 提取 / Extract image URLs from markdown
-		const imageUrls = Downloader.extractImageUrls(result.markdown);
-
-		return this.saveNote({ ...metadata, content: result.markdown, imageUrls }, url, stsId);
-	}
 
 	/**
 	 * 统一下游保存逻辑：sanitize → frontmatter → images → vault
@@ -283,7 +264,7 @@ export class Downloader {
 		return match?.[1] ?? null;
 	}
 
-	// ── 质量与 SSR 检测 / Quality & SSR Detection ──────────────────────────
+	// ── 域名检测 / Domain Detection ──────────────────────────────────────
 
 	/**
 	 * 检测是否为微信 URL / Check if WeChat URL
@@ -295,54 +276,8 @@ export class Downloader {
 		return /mp\.weixin\.qq\.com/.test(url);
 	}
 
-	/**
-	 * 检测 HTML 是否包含 SSR 状态数据
-	 * Detect if HTML contains SSR state data
-	 *
-	 * 有 SSR 状态的页面原始 HTML 包含完整数据（如 XHS 的 __INITIAL_STATE__），
-	 * headless 可能因 JS 执行而丢失这些数据。检测到后跳过 headless 兜底。
-	 */
-	private static hasSsrState(html: string): boolean {
-		return /window\.__INITIAL_STATE__\s*=|window\.__NUXT__\s*=|__NEXT_DATA__\s*=|window\.__DATA__\s*=/.test(html);
-	}
 
-	/**
-	 * 快速检测 HTML 内容质量是否过差（需要 headless 兜底）
-	 * Quick check if HTML content quality is too poor (needs headless fallback)
-	 */
-	private static isQualityPoor(html: string): boolean {
-		// 太小 → 空/错误页 / Too small → empty/error page
-		if (html.length < 500) return true;
 
-		// 去脚本/样式后的纯文本 / Plain text after removing scripts/styles
-		const text = html
-			.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
-			.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
-			.replace(/<[^>]+>/g, '')
-			.replace(/\s+/g, ' ')
-			.trim();
-
-		// 文本太短 → 无意义 / Text too short → meaningless
-		if (text.length < 100) return true;
-
-		// HTML 很大但文本很少 → SPA 空壳 / Large HTML but little text → SPA shell
-		if (html.length > 200_000 && text.length < 500) return true;
-
-		return false;
-	}
-
-	/**
-	 * 最小可行性检测：HTML 有基础内容，专用于 SSR 短路分支
-	 * Minimal viability check: HTML has basic content, used only in SSR branch
-	 *
-	 * 不复用 isQualityPoor：后者的大文件规则（>200KB 且文本<500字符）对 SSR 页面不适用
-	 * Does not reuse isQualityPoor: its large-file rule is inapplicable to SSR pages
-	 */
-	private static isMinimallyViable(html: string): boolean {
-		if (html.length < 200) return false;
-		const text = html.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
-		return text.length >= 50;
-	}
 
 	// ── 工具方法 / Utility Methods ──────────────────────────────────────────
 
