@@ -48,6 +48,13 @@ export class Downloader {
 	 */
 	async processUrl(url: string, stsId: string): Promise<ProcessResult> {
 		const cleanUrl = Downloader.stripWeChatTrackingParams(url);
+
+		// Obsidian Publish 快速通道：直接从 API 获取原始 Markdown，跳过 converter 管线
+		// Obsidian Publish fast path: fetch raw Markdown directly from API, skip converter pipeline
+		if (Downloader.isObsidianPublishUrl(cleanUrl)) {
+			return this.processObsidianPublish(cleanUrl, stsId);
+		}
+
 		const { html, canonicalUrl } = await this.acquireHtml(cleanUrl);
 		if (!html) {
 			return { success: false, error: '无法获取页面内容 / Failed to fetch page content' };
@@ -112,7 +119,72 @@ export class Downloader {
 		return { html, canonicalUrl: url };
 	}
 
+	/**
+	 * Obsidian Publish 快速通道：SPA 壳 → 提取 API URL → 直接获取原始 Markdown
+	 * Obsidian Publish fast path: SPA shell → extract API URL → fetch raw Markdown directly
+	 *
+	 * 跳过 converter 管线，因为 API 返回的内容已经是完整的 Markdown。
+	 * Skip converter pipeline since API returns complete Markdown.
+	 */
+	private async processObsidianPublish(url: string, stsId: string): Promise<ProcessResult> {
+		// 获取 SPA 壳（含元数据 meta 标签 + window.preloadPage API URL）
+		// Fetch SPA shell (contains metadata meta tags + window.preloadPage API URL)
+		const shellResult = await this.fetchHtmlViaNodeJs(url);
+		if (!shellResult) {
+			return { success: false, error: '无法获取页面内容 / Failed to fetch page content' };
+		}
+		const { html: shellHtml, canonicalUrl } = shellResult;
 
+		// 从 SPA 壳提取 preloadPage API URL / Extract preloadPage API URL from SPA shell
+		const apiUrl = Downloader.extractObsidianPublishApiUrl(shellHtml);
+		if (!apiUrl) {
+			// SPA 结构变更，回退到正常流程 / SPA structure changed, fall back to normal flow
+			return this.processUrlFallback(shellHtml, canonicalUrl, url, stsId);
+		}
+
+		// 获取原始 Markdown / Fetch raw Markdown
+		const mdResult = await this.doNodeFetch(apiUrl, 0, new URL(url).origin);
+		if (!mdResult) {
+			return { success: false, error: '无法获取 Markdown 内容 / Failed to fetch Markdown content' };
+		}
+
+		// 从 SPA 壳提取元数据 / Extract metadata from SPA shell
+		const shellDoc = new DOMParser().parseFromString(shellHtml, 'text/html');
+		const metadata = MetadataExtractor.extract(shellDoc, shellHtml);
+
+		// 直接构建 ParsedContent（跳过 converter 管线，API 返回的是完整 Markdown）
+		// Build ParsedContent directly (skip converter pipeline, API returns complete Markdown)
+		const imageUrls = Downloader.extractImageUrls(mdResult.html);
+		const parsed: ParsedContent = { ...metadata, content: mdResult.html, imageUrls };
+
+		return this.saveNote(parsed, canonicalUrl, stsId);
+	}
+
+	/**
+	 * Obsidian Publish 快速通道失败时回退到正常管线
+	 * Fallback to normal pipeline when Obsidian Publish fast path fails
+	 */
+	private async processUrlFallback(
+		html: string, canonicalUrl: string, url: string, stsId: string,
+	): Promise<ProcessResult> {
+		const parsed = this.processDocToParsed(html, canonicalUrl);
+		if (parsed && isMarkdownViable(parsed.content)) {
+			return this.saveNote(parsed, canonicalUrl, stsId);
+		}
+		if (!Downloader.isWeChatUrl(url)) {
+			const headlessHtml = await this.headlessExtractor.extractRenderedHtml(url);
+			if (headlessHtml) {
+				const headlessParsed = this.processDocToParsed(headlessHtml, url);
+				if (headlessParsed) {
+					return this.saveNote(headlessParsed, url, stsId);
+				}
+			}
+		}
+		if (parsed) {
+			return this.saveNote(parsed, canonicalUrl, stsId);
+		}
+		return { success: false, error: '无法提取页面内容 / Failed to extract page content' };
+	}
 
 	/**
 	 * 统一下游保存逻辑：sanitize → frontmatter → images → vault
@@ -274,6 +346,30 @@ export class Downloader {
 	 */
 	private static isWeChatUrl(url: string): boolean {
 		return /mp\.weixin\.qq\.com/.test(url);
+	}
+
+	/**
+	 * 检测是否为 Obsidian Publish URL / Check if Obsidian Publish URL
+	 *
+	 * Obsidian Publish 返回 SPA 空壳，真实内容通过 window.preloadPage API 异步加载。
+	 * Obsidian Publish returns a SPA shell; real content loads via window.preloadPage API.
+	 */
+	private static isObsidianPublishUrl(url: string): boolean {
+		try {
+			const hostname = new URL(url).hostname;
+			return /(?:^|\.)docs\.obsidian\.md$|(?:^|\.)publish\.obsidian\.md$/.test(hostname);
+		} catch {
+			return false;
+		}
+	}
+
+	/**
+	 * 从 SPA 壳 HTML 中提取 Obsidian Publish 的原始 Markdown API URL
+	 * Extract Obsidian Publish raw Markdown API URL from SPA shell HTML
+	 */
+	private static extractObsidianPublishApiUrl(html: string): string | null {
+		const match = html.match(/window\.preloadPage=f\("([^"]+)"\)/);
+		return match?.[1] ?? null;
 	}
 
 
