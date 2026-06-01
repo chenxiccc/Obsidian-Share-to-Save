@@ -1,4 +1,4 @@
-# [中文说明](#share-to-save中文)
+[中文说明](#share-to-save中文说明)
 
 # Share to Save
 
@@ -69,6 +69,8 @@ Providing a sample URL is essential — different pages on the same platform can
 MIT
 
 ---
+
+<a id="share-to-save中文说明"></a>
 
 # Share to Save（中文）
 

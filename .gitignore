@@ -1,7 +1,9 @@
 node_modules/
+node_modules
 main.js
 main.js.map
 .DS_Store
 *.log
 CLAUDE*.md
 docs/
+docs
