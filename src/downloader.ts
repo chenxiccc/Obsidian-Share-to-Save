@@ -44,18 +44,11 @@ export class Downloader {
 	 * Process a single URL: two-phase acquisition → unified pipeline → save .md
 	 *
 	 * Phase 1: Node.js → pipeline → isMarkdownViable? → save
-	 * Phase 2: headless fallback (only if Phase 1 fails and not WeChat)
+	 * Phase 2: headless fallback (only if Phase 1 didn't try headless)
 	 */
 	async processUrl(url: string, stsId: string): Promise<ProcessResult> {
 		const cleanUrl = Downloader.stripWeChatTrackingParams(url);
-
-		// Obsidian Publish 快速通道：直接从 API 获取原始 Markdown，跳过 converter 管线
-		// Obsidian Publish fast path: fetch raw Markdown directly from API, skip converter pipeline
-		if (Downloader.isObsidianPublishUrl(cleanUrl)) {
-			return this.processObsidianPublish(cleanUrl, stsId);
-		}
-
-		const { html, canonicalUrl } = await this.acquireHtml(cleanUrl);
+		const { html, canonicalUrl, triedHeadless } = await this.acquireHtml(cleanUrl);
 		if (!html) {
 			return { success: false, error: '无法获取页面内容 / Failed to fetch page content' };
 		}
@@ -66,8 +59,8 @@ export class Downloader {
 			return this.saveNote(parsed, canonicalUrl, stsId);
 		}
 
-		// Phase 2: Headless 兜底（微信已走 headless，跳过）/ Headless fallback
-		if (!Downloader.isWeChatUrl(cleanUrl)) {
+		// Phase 2: Headless 兜底（Phase 1 未尝试 headless 时）/ Headless fallback (only if Phase 1 didn't try headless)
+		if (!triedHeadless) {
 			const headlessHtml = await this.headlessExtractor.extractRenderedHtml(cleanUrl);
 			if (headlessHtml) {
 				const headlessParsed = this.processDocToParsed(headlessHtml, cleanUrl);
@@ -108,82 +101,31 @@ export class Downloader {
 	 * HTML 获取：微信直连 headless，其他走 Node.js https。
 	 * HTML acquisition: WeChat → headless directly, others → Node.js https.
 	 */
-	private async acquireHtml(url: string): Promise<{ html: string | null; canonicalUrl: string }> {
+	private async acquireHtml(url: string): Promise<{ html: string | null; canonicalUrl: string; triedHeadless: boolean }> {
+		// WeChat: headless 直连（已知反爬，Node.js 大概率返回验证页）
+		// WeChat: headless directly (known anti-crawl, Node.js likely returns captcha)
 		if (Downloader.isWeChatUrl(url)) {
 			const html = await this.headlessExtractor.extractRenderedHtml(url);
-			return { html, canonicalUrl: url };
+			return { html, canonicalUrl: url, triedHeadless: true };
 		}
+
+		// Node.js https 优先 / Node.js https first
 		const fetched = await this.fetchHtmlViaNodeJs(url);
-		if (fetched) return fetched;
-		const html = await this.headlessExtractor.extractRenderedHtml(url);
-		return { html, canonicalUrl: url };
-	}
-
-	/**
-	 * Obsidian Publish 快速通道：SPA 壳 → 提取 API URL → 直接获取原始 Markdown
-	 * Obsidian Publish fast path: SPA shell → extract API URL → fetch raw Markdown directly
-	 *
-	 * 跳过 converter 管线，因为 API 返回的内容已经是完整的 Markdown。
-	 * Skip converter pipeline since API returns complete Markdown.
-	 */
-	private async processObsidianPublish(url: string, stsId: string): Promise<ProcessResult> {
-		// 获取 SPA 壳（含元数据 meta 标签 + window.preloadPage API URL）
-		// Fetch SPA shell (contains metadata meta tags + window.preloadPage API URL)
-		const shellResult = await this.fetchHtmlViaNodeJs(url);
-		if (!shellResult) {
-			return { success: false, error: '无法获取页面内容 / Failed to fetch page content' };
-		}
-		const { html: shellHtml, canonicalUrl } = shellResult;
-
-		// 从 SPA 壳提取 preloadPage API URL / Extract preloadPage API URL from SPA shell
-		const apiUrl = Downloader.extractObsidianPublishApiUrl(shellHtml);
-		if (!apiUrl) {
-			// SPA 结构变更，回退到正常流程 / SPA structure changed, fall back to normal flow
-			return this.processUrlFallback(shellHtml, canonicalUrl, url, stsId);
-		}
-
-		// 获取原始 Markdown / Fetch raw Markdown
-		const mdResult = await this.doNodeFetch(apiUrl, 0, new URL(url).origin);
-		if (!mdResult) {
-			return { success: false, error: '无法获取 Markdown 内容 / Failed to fetch Markdown content' };
-		}
-
-		// 从 SPA 壳提取元数据 / Extract metadata from SPA shell
-		const shellDoc = new DOMParser().parseFromString(shellHtml, 'text/html');
-		const metadata = MetadataExtractor.extract(shellDoc, shellHtml);
-
-		// 直接构建 ParsedContent（跳过 converter 管线，API 返回的是完整 Markdown）
-		// Build ParsedContent directly (skip converter pipeline, API returns complete Markdown)
-		const imageUrls = Downloader.extractImageUrls(mdResult.html);
-		const parsed: ParsedContent = { ...metadata, content: mdResult.html, imageUrls };
-
-		return this.saveNote(parsed, canonicalUrl, stsId);
-	}
-
-	/**
-	 * Obsidian Publish 快速通道失败时回退到正常管线
-	 * Fallback to normal pipeline when Obsidian Publish fast path fails
-	 */
-	private async processUrlFallback(
-		html: string, canonicalUrl: string, url: string, stsId: string,
-	): Promise<ProcessResult> {
-		const parsed = this.processDocToParsed(html, canonicalUrl);
-		if (parsed && isMarkdownViable(parsed.content)) {
-			return this.saveNote(parsed, canonicalUrl, stsId);
-		}
-		if (!Downloader.isWeChatUrl(url)) {
-			const headlessHtml = await this.headlessExtractor.extractRenderedHtml(url);
-			if (headlessHtml) {
-				const headlessParsed = this.processDocToParsed(headlessHtml, url);
-				if (headlessParsed) {
-					return this.saveNote(headlessParsed, url, stsId);
+		if (fetched) {
+			// Obsidian Publish SPA 壳检测（内容模式，非域名）→ fetch 原始 MD → 合成 HTML
+			// Obsidian Publish SPA shell detection (content pattern, not domain) → fetch raw MD → synthesize HTML
+			if (Downloader.isObsidianPublishShell(fetched.html)) {
+				const enriched = await this.enrichObsidianPublishHtml(fetched.html, url);
+				if (enriched) {
+					return { html: enriched, canonicalUrl: fetched.canonicalUrl, triedHeadless: false };
 				}
 			}
+			return { html: fetched.html, canonicalUrl: fetched.canonicalUrl, triedHeadless: false };
 		}
-		if (parsed) {
-			return this.saveNote(parsed, canonicalUrl, stsId);
-		}
-		return { success: false, error: '无法提取页面内容 / Failed to extract page content' };
+
+		// Node.js 失败 → headless 兜底 / Node.js failed → headless fallback
+		const html = await this.headlessExtractor.extractRenderedHtml(url);
+		return { html, canonicalUrl: url, triedHeadless: true };
 	}
 
 	/**
@@ -354,15 +296,6 @@ export class Downloader {
 	 * Obsidian Publish 返回 SPA 空壳，真实内容通过 window.preloadPage API 异步加载。
 	 * Obsidian Publish returns a SPA shell; real content loads via window.preloadPage API.
 	 */
-	private static isObsidianPublishUrl(url: string): boolean {
-		try {
-			const hostname = new URL(url).hostname;
-			return /(?:^|\.)docs\.obsidian\.md$|(?:^|\.)publish\.obsidian\.md$/.test(hostname);
-		} catch {
-			return false;
-		}
-	}
-
 	/**
 	 * 从 SPA 壳 HTML 中提取 Obsidian Publish 的原始 Markdown API URL
 	 * Extract Obsidian Publish raw Markdown API URL from SPA shell HTML
@@ -370,6 +303,47 @@ export class Downloader {
 	private static extractObsidianPublishApiUrl(html: string): string | null {
 		const match = html.match(/window\.preloadPage=f\("([^"]+)"\)/);
 		return match?.[1] ?? null;
+	}
+
+	/**
+	 * 检测 HTML 是否为 Obsidian Publish SPA 空壳（内容模式检测，非域名）
+	 * Check if HTML is an Obsidian Publish SPA shell (content pattern, not domain)
+	 *
+	 * SPA 壳特征：window.preloadPage 指向 .md API URL。
+	 * 仅检测内容模式，不依赖域名，因此自定义域名也能覆盖。
+	 * SPA shell signature: window.preloadPage points to .md API URL.
+	 * Content-pattern based, so custom domains are automatically covered.
+	 */
+	private static isObsidianPublishShell(html: string): boolean {
+		return /window\.preloadPage=f\("https?:\/\/[^"]+\.md"\)/.test(html);
+	}
+
+	/**
+	 * 从 SPA 壳提取 API URL → fetch 原始 Markdown → 合成 HTML
+	 * Extract API URL from SPA shell → fetch raw Markdown → synthesize HTML
+	 *
+	 * 合成 HTML 保留 <head> 元数据（供 MetadataExtractor 使用），
+	 * <body> 中嵌入 <script id="publish-markdown"> 存放原始 MD（供 ObsidianPublishConverter 提取）。
+	 * Synthesized HTML preserves <head> metadata (for MetadataExtractor),
+	 * body embeds raw MD in <script id="publish-markdown"> (for ObsidianPublishConverter).
+	 */
+	private async enrichObsidianPublishHtml(shellHtml: string, url: string): Promise<string | null> {
+		const apiUrl = Downloader.extractObsidianPublishApiUrl(shellHtml);
+		if (!apiUrl) return null;
+
+		const mdResult = await this.doNodeFetch(apiUrl, 0, new URL(url).origin);
+		if (!mdResult) return null;
+
+		// 保留 SPA 壳 <head> 内容（title、og:description 等 meta 标签）
+		// Preserve SPA shell <head> content (title, og:description, etc.)
+		const headMatch = shellHtml.match(/<head[^>]*>([\s\S]*?)<\/head>/i);
+		const headContent = headMatch?.[1] ?? '<meta charset="utf-8">';
+
+		// 转义 Markdown 中极罕见的 </script> 字符串
+		// Escape extremely rare </script> in Markdown
+		const safeMd = mdResult.html.replace(/<\/script>/gi, '<\\/script>');
+
+		return `<!DOCTYPE html><html><head>${headContent}</head><body><script type="text/plain" id="publish-markdown">${safeMd}<\/script></body></html>`;
 	}
 
 

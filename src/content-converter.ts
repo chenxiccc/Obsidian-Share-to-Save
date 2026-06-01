@@ -558,6 +558,32 @@ class XiaohongshuConverter implements ContentConverter {
 	}
 }
 
+// ─── Obsidian Publish 转换器 / Obsidian Publish Converter ──────────────────────
+
+/**
+ * Obsidian Publish 页面转换器
+ * Obsidian Publish page converter
+ *
+ * acquireHtml 已将原始 Markdown 嵌入合成 HTML 的 <script id="publish-markdown"> 中。
+ * 直接从该元素取 textContent 返回，不经过 Turndown（内容已经是最终 Markdown）。
+ * acquireHtml has embedded raw Markdown in <script id="publish-markdown"> of synthesized HTML.
+ * Returns textContent directly, no Turndown needed (content is already final Markdown).
+ */
+class ObsidianPublishConverter implements ContentConverter {
+	readonly domainPattern = /obsidian\.md/;
+
+	convert(doc: Document, _url: string, _rawHtml?: string): ConvertResult {
+		// 从合成 HTML 提取原始 Markdown / Extract raw Markdown from synthesized HTML
+		const script = doc.getElementById('publish-markdown');
+		if (script?.textContent?.trim()) {
+			return { markdown: script.textContent.trim() };
+		}
+		// 降级：非合成 HTML（headless 渲染的正常页面），返回空让 DefuddleConverter 兜底
+		// Fallback: not synthesized HTML (headless-rendered page), return empty for DefuddleConverter
+		return { markdown: '' };
+	}
+}
+
 // ─── Defuddle 通用回退 / Defuddle Generic Fallback ───────────────────────────
 
 /**
@@ -578,6 +604,7 @@ class DefuddleConverter implements ContentConverter {
 const converters: ContentConverter[] = [
 	new WeChatConverter(),
 	new XiaohongshuConverter(),
+	new ObsidianPublishConverter(),
 ];
 
 /** Defuddle 通用回退，始终在注册表末尾作为兜底 / Defuddle generic fallback, always at end of registry */
