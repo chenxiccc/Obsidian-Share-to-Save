@@ -8,6 +8,7 @@
 import { Vault, normalizePath } from 'obsidian';
 import type { ParsedContent, ProcessResult, ShareToSaveSettings, Metadata } from './types';
 import { CHROME_UA } from './types';
+import { sanitizeFilename } from './text-utils';
 import { ImageHandler } from './image-handler';
 import type { Translator } from './i18n';
 import { HeadlessExtractor } from './headless-extractor';
@@ -412,11 +413,7 @@ export class Downloader {
 	 * 清理笔记标题为安全文件名 / Sanitize note title for safe filename
 	 */
 	static sanitizeNoteTitle(title: string): string {
-		return title
-			.replace(/[/\\:*?"<>|#^[\]]/g, '_')
-			.replace(/\s+/g, ' ')
-			.trim()
-			.slice(0, 200);
+		return sanitizeFilename(title, 200);
 	}
 
 	/**

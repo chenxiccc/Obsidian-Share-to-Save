@@ -10,6 +10,7 @@ import TurndownService from 'turndown';
 import { gfm } from '@joplin/turndown-plugin-gfm';
 import Defuddle from 'defuddle/full';
 import type { Metadata } from './types';
+import { escapeObsidianTags, escapeLinkDestination } from './text-utils';
 
 // ─── 类型 / Types ──────────────────────────────────────────────────────────
 
@@ -30,15 +31,6 @@ export interface ContentConverter {
 }
 
 const SYSTEM_IMG = ['pic_blank.gif', 'res.wx.qq.com/mmbizappmsg'];
-
-/**
- * 对 URL 做 Markdown 链接目标逃逸：转义 <>() 和空格
- * Escape URL for Markdown link destination: escape <>() and spaces
- */
-function escapeLinkDestination(destination: string): string {
-	const escaped = destination.replace(/([<>()])/g, '\\$1');
-	return escaped.indexOf(' ') >= 0 ? '<' + escaped + '>' : escaped;
-}
 
 // ─── 微信转换器 / WeChat Converter ──────────────────────────────────────────
 
@@ -381,7 +373,7 @@ class WeChatConverter implements ContentConverter {
 				node.nodeName.toLowerCase() === 'a' && (node.getAttribute('href') || '').startsWith('javascript:'),
 			replacement: (content: string) => {
 				// 转义 # 防止 Obsidian 识别为标签 / Escape # to prevent Obsidian tag recognition
-				return content.replace(/(^|\s)#/g, '$1\\#');
+				return escapeObsidianTags(content);
 			},
 		});
 
@@ -484,7 +476,7 @@ class XiaohongshuConverter implements ContentConverter {
 			text = text.replace(/\[话题\]#?/g, '');
 			// 转义行首和空格后的 #，避免被 Obsidian 识别为标签
 			// Escape # at line start or after space to prevent Obsidian tag recognition
-			text = text.replace(/(^|\s)#/g, '$1\\#');
+			text = escapeObsidianTags(text);
 			parts.push(text);
 		}
 

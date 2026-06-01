@@ -8,6 +8,7 @@
 
 import { Vault, normalizePath } from 'obsidian';
 import { CHROME_UA } from './types';
+import { sanitizeFilename as sanitizeForFs } from './text-utils';
 
 /** 匹配 Markdown 图片语法 / Match Markdown image syntax */
 const IMG_URL_REGEX = /!\[([^\]]*)\]\((https?:\/\/[^)\s]+)\)/g;
@@ -19,14 +20,6 @@ const FILE_URL_REGEX = /\[([^\]]*)\]\((https?:\/\/[^)\s]+)\)/g;
 const WIKILINK_REGEX = /\[\[([^\]]+)\]\]/;
 
 // ─── 文件名工具 / Filename utilities ──────────────────────────────────────────
-
-/** 清理文件名中的非法字符 / Sanitize illegal characters in filename */
-function sanitizeFilename(name: string): string {
-	return name
-		.replace(/[/\\:*?"<>|#^[\]]/g, '_')
-		.replace(/\s+/g, ' ')
-		.trim();
-}
 
 /** 清理标题为安全文件名片段 / Sanitize title for filename segment */
 function sanitizeTitle(name: string | undefined, fallback = 'image'): string {
@@ -132,7 +125,7 @@ function buildStableFilename(
 	const baseFilename = filename
 		? (filename.includes('.') ? filename : `${filename}${ext}`)
 		: `${options.fallbackName}${ext}`;
-	return sanitizeFilename(`${safeTitle}-${sanitizeFilename(baseFilename)}`);
+	return sanitizeForFs(`${safeTitle}-${sanitizeForFs(baseFilename)}`);
 }
 
 // ─── 图片处理器 / Image handler ──────────────────────────────────────────────
