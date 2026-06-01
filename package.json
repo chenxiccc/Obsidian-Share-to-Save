@@ -1,6 +1,6 @@
 {
 	"name": "obsidian-share-to-save",
-	"version": "2.0.3",
+	"version": "2.0.4",
 	"description": "Save shared web content to your Obsidian vault. Share URLs from mobile, download and save on desktop.",
 	"main": "main.js",
 	"type": "module",
