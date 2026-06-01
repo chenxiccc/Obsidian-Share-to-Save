@@ -28,6 +28,7 @@ export default class ShareToSavePlugin extends Plugin {
 	private downloader!: Downloader;
 	private fileWatcher!: FileWatcher;
 	private shareMenuInjector!: ShareMenuInjector;
+	private ribbonIconEl!: HTMLElement;
 
 	async onload(): Promise<void> {
 		// ── 加载设置 / Load settings ──
@@ -70,10 +71,13 @@ export default class ShareToSavePlugin extends Plugin {
 				() => this.getPollIntervalMs(),
 			);
 			this.fileWatcher.start();
+			this.fileWatcher.onProcessingChange = (processing) => {
+				this.ribbonIconEl.classList.toggle('sts-processing', processing);
+			};
 		}
 
 		// ── Ribbon 按钮（全平台）/ Ribbon button (all platforms) ──
-		this.addRibbonIcon('cloud-download', this.t('ribbon.tooltip'), async () => {
+		this.ribbonIconEl = this.addRibbonIcon('cloud-download', this.t('ribbon.tooltip'), async () => {
 			await this.openUrlModal();
 		});
 

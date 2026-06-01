@@ -106,6 +106,21 @@
 	display: none;
 }
 
+/* ── Ribbon 图标处理中状态 / Ribbon icon processing state ── */
+
+.side-dock-ribbon-action.sts-processing {
+	color: #40a02b;
+}
+
+.side-dock-ribbon-action.sts-processing svg {
+	animation: sts-swell 2s ease-in-out infinite;
+}
+
+@keyframes sts-swell {
+	0%, 100% { stroke-width: 1.5; }
+	50%      { stroke-width: 3; }
+}
+
 /* ── 设置页流程图 / Settings page flow diagram ── */
 
 .sts-userflow-container img {

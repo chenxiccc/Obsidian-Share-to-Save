@@ -17,6 +17,9 @@ export class FileWatcher {
 	private isProcessing = false; // 防止并发处理 / Prevent concurrent processing
 	private currentIntervalMs: number;
 
+	/** 处理状态变化回调，用于驱动 UI 更新 / Callback for processing state change, drives UI updates */
+	onProcessingChange: ((processing: boolean) => void) | null = null;
+
 	constructor(
 		private queueManager: QueueManager,
 		private downloader: Downloader,
@@ -86,6 +89,7 @@ export class FileWatcher {
 			if (entries.length === 0) return;
 
 			this.isProcessing = true;
+			this.onProcessingChange?.(true);
 			this.debugLog(`发现 ${entries.length} 条待处理 / Found ${entries.length} pending entries`);
 
 			for (const entry of entries) {
@@ -111,6 +115,7 @@ export class FileWatcher {
 			this.debugLog(`轮询检查异常 / Polling check error: ${String(err)}`);
 		} finally {
 			this.isProcessing = false;
+			this.onProcessingChange?.(false);
 		}
 	}
 }
