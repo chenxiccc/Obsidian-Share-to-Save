@@ -102,6 +102,10 @@ export class HeadlessExtractor {
 			// 4. 触发懒加载 / Trigger lazy loading
 			await this.scrollToTriggerLazyLoad(win);
 
+			// 4.5. Stamp computed visibility as inline style 供 defuddle hidden.ts 使用
+			// Stamp computed visibility as inline style for defuddle hidden.ts
+			await this.stampComputedProperties(win);
+
 			// 5. 提取 HTML / Extract HTML
 			const html = await this.extractHtml(win);
 
@@ -413,6 +417,42 @@ export class HeadlessExtractor {
 			await new Promise(r => setTimeout(r, 500));
 		} catch {
 			/* 滚动失败不阻塞 / scroll failure doesn't block */
+		}
+	}
+
+	// ── Computed 隐藏样式注入 / Computed Hidden Style Stamping ──────────────
+
+	/**
+	 * 在提取 HTML 前，将 computed 隐藏状态注入为 inline style。
+	 * defuddle 的 hidden.ts 中有无条件的 inline style 检测。DOMParser 上下文中
+	 * defaultView=null，无法通过 getComputedStyle 获取 CSS 隐藏元素。此方法提前
+	 * 把 computed display/visibility/opacity 写入 inline style，使 defuddle 的
+	 * inline style 检测路径能捕获 CSS 隐藏的噪声元素（侧栏、弹窗、cookie 横幅等）。
+	 *
+	 * Stamp computed visibility as inline styles before extracting HTML.
+	 * defuddle's hidden.ts has an unconditional inline style check. In DOMParser
+	 * context defaultView=null prevents getComputedStyle from detecting CSS-hidden
+	 * elements. This stamps computed display/visibility/opacity as inline styles
+	 * so defuddle's inline style detection captures CSS-hidden noise (sidebars,
+	 * popups, cookie banners, etc.).
+	 */
+	private async stampComputedProperties(win: ElectronBrowserWindow): Promise<void> {
+		try {
+			await win.webContents.executeJavaScript(
+				'(function(){' +
+				'var all=document.querySelectorAll("*");' +
+				'for(var i=0;i<all.length;i++){try{' +
+				'var el=all[i];' +
+				'var cs=getComputedStyle(el);' +
+				// 隐藏状态 → inline style / Hidden states → inline style
+				'if(cs.display==="none")el.style.display="none";' +
+				'if(cs.visibility==="hidden")el.style.visibility="hidden";' +
+				'if(cs.opacity==="0")el.style.opacity="0";' +
+				'}catch(e){}}' +
+				'})();'
+			);
+		} catch {
+			/* stamp 失败不阻塞提取 / stamp failure doesn't block extraction */
 		}
 	}
 
