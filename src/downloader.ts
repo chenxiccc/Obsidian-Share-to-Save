@@ -8,7 +8,7 @@
 import { Vault, normalizePath } from 'obsidian';
 import type { ParsedContent, ProcessResult, ShareToSaveSettings, Metadata } from './types';
 import { CHROME_UA, buildHeaders } from './http-utils';
-import { sanitizeFilename, isMarkdownViable } from './text-utils';
+import { sanitizeFilename, computeEffectiveContent } from './text-utils';
 import { ImageHandler } from './image-handler';
 import type { Translator } from './i18n';
 import { HeadlessExtractor } from './headless-extractor';
@@ -26,9 +26,77 @@ interface NodeFetchResult {
 	canonicalUrl: string;
 }
 
+/** Node.js fetch 函数签名，handler 通过闭包获取 / Node.js fetch function signature, handlers capture via closure */
+type FetchFn = (url: string, referer: string) => Promise<NodeFetchResult | null>;
+
+/**
+ * 网站获取策略处理器 / Site acquisition strategy handler
+ *
+ * 每个网站可自定义 matches（URL 匹配规则）和 acquire（获取策略）。
+ * 新增网站只需实现此接口并注册到 siteHandlers 数组。
+ * Each site defines matches (URL matching) and acquire (acquisition strategy).
+ * Adding a new site means implementing this interface and registering in siteHandlers.
+ */
+interface SiteHandler {
+	readonly name: string;
+	matches(url: string): boolean;
+	acquire(url: string): Promise<{ html: string | null; canonicalUrl: string }>;
+}
+
+/**
+ * 微信 handler：headless 直连（已知 Node.js 反爬）
+ * WeChat handler: headless directly (known Node.js anti-crawl)
+ */
+function createWechatHandler(headless: HeadlessExtractor): SiteHandler {
+	return {
+		name: 'WeChat',
+		matches: (url) => /mp\.weixin\.qq\.com/.test(url),
+		acquire: async (url) => {
+			const html = await headless.extractRenderedHtml(url);
+			return { html, canonicalUrl: url };
+		},
+	};
+}
+
+/**
+ * 小红书 handler：Node.js https + Referer 伪装（已验证可行）
+ * XHS handler: Node.js https + Referer spoofing (verified working)
+ */
+function createXhsHandler(fetchFn: FetchFn): SiteHandler {
+	return {
+		name: 'XHS',
+		matches: (url) => /xiaohongshu\.com|xhslink\.com/i.test(url),
+		acquire: async (url) => {
+			const fetched = await fetchFn(url, 'https://www.xiaohongshu.com/');
+			return { html: fetched?.html ?? null, canonicalUrl: fetched?.canonicalUrl ?? url };
+		},
+	};
+}
+
+/**
+ * Obsidian Publish handler：Node.js 探测 SPA 壳 → enrich 取原始 MD，失败回退 headless
+ * Obsidian Publish handler: Node.js detect SPA shell → enrich to raw MD, fallback to headless
+ */
+function createOpHandler(fetchFn: FetchFn, headless: HeadlessExtractor): SiteHandler {
+	return {
+		name: 'Obsidian Publish',
+		matches: (url) => /obsidian\.md|publish\.obsidian\.md/i.test(url),
+		acquire: async (url) => {
+			const fetched = await fetchFn(url, new URL(url).origin);
+			if (fetched && Downloader.isObsidianPublishShell(fetched.html)) {
+				const enriched = await Downloader.enrichObsidianPublishHtml(fetched.html, url);
+				if (enriched) return { html: enriched, canonicalUrl: fetched.canonicalUrl };
+			}
+			const html = await headless.extractRenderedHtml(url);
+			return { html, canonicalUrl: url };
+		},
+	};
+}
+
 export class Downloader {
 	private readonly imageHandler: ImageHandler;
 	private readonly headlessExtractor: HeadlessExtractor;
+	private readonly siteHandlers: SiteHandler[];
 
 	constructor(
 		private vault: Vault,
@@ -37,41 +105,30 @@ export class Downloader {
 	) {
 		this.imageHandler = new ImageHandler(vault, settings.outputFolder);
 		this.headlessExtractor = new HeadlessExtractor();
+		this.siteHandlers = [
+			createWechatHandler(this.headlessExtractor),
+			createXhsHandler((url, referer) => this.fetchHtmlViaNodeJs(url, referer)),
+			createOpHandler((url, referer) => this.fetchHtmlViaNodeJs(url, referer), this.headlessExtractor),
+		];
 	}
 
 	/**
-	 * 处理单个 URL：两阶段获取 → 统一管线 → 保存 .md
-	 * Process a single URL: two-phase acquisition → unified pipeline → save .md
-	 *
-	 * Phase 1: Node.js → pipeline → isMarkdownViable? → save
-	 * Phase 2: headless fallback (only if Phase 1 didn't try headless)
+	 * 处理单个 URL：获取 HTML → 转换管线 → 判断提取成功 → 保存/失败
+	 * Process a single URL: acquire HTML → pipeline → check extraction success → save/fail
 	 */
 	async processUrl(url: string, stsId: string): Promise<ProcessResult> {
 		const cleanUrl = Downloader.stripWeChatTrackingParams(url);
-		const { html, canonicalUrl, triedHeadless } = await this.acquireHtml(cleanUrl);
+		const { html, canonicalUrl } = await this.acquireHtml(cleanUrl);
 		if (!html) {
 			return { success: false, error: '无法获取页面内容 / Failed to fetch page content' };
 		}
 
-		// Phase 1: 转换 + 输出质量评估 / Convert + output quality assessment
 		const parsed = this.processDocToParsed(html, canonicalUrl);
-		if (parsed && isMarkdownViable(parsed.content)) {
-			return this.saveNote(parsed, canonicalUrl, stsId);
+		if (!parsed) {
+			return { success: false, error: '无法提取页面内容 / Failed to extract page content' };
 		}
 
-		// Phase 2: Headless 兜底（Phase 1 未尝试 headless 时）/ Headless fallback (only if Phase 1 didn't try headless)
-		if (!triedHeadless) {
-			const headlessHtml = await this.headlessExtractor.extractRenderedHtml(cleanUrl);
-			if (headlessHtml) {
-				const headlessParsed = this.processDocToParsed(headlessHtml, cleanUrl);
-				if (headlessParsed) {
-					return this.saveNote(headlessParsed, cleanUrl, stsId);
-				}
-			}
-		}
-
-		// Phase 1 有部分内容则尽力保存 / Best effort: save Phase 1 result
-		if (parsed) {
+		if (Downloader.isExtractionSuccessful(parsed)) {
 			return this.saveNote(parsed, canonicalUrl, stsId);
 		}
 		return { success: false, error: '无法提取页面内容 / Failed to extract page content' };
@@ -98,34 +155,28 @@ export class Downloader {
 	}
 
 	/**
-	 * HTML 获取：微信直连 headless，其他走 Node.js https。
-	 * HTML acquisition: WeChat → headless directly, others → Node.js https.
+	 * 判断管线输出是否提取成功：有文本或图片即成功，二值判断，无阈值。
+	 * Check if pipeline output is extraction successful: any text or images = success, binary, no threshold.
 	 */
-	private async acquireHtml(url: string): Promise<{ html: string | null; canonicalUrl: string; triedHeadless: boolean }> {
-		// WeChat: headless 直连（已知反爬，Node.js 大概率返回验证页）
-		// WeChat: headless directly (known anti-crawl, Node.js likely returns captcha)
-		if (Downloader.isWeChatUrl(url)) {
-			const html = await this.headlessExtractor.extractRenderedHtml(url);
-			return { html, canonicalUrl: url, triedHeadless: true };
-		}
+	private static isExtractionSuccessful(parsed: ParsedContent): boolean {
+		const hasText = computeEffectiveContent(parsed.content).length > 0;
+		const hasImages = parsed.imageUrls.length > 0;
+		return hasText || hasImages;
+	}
 
-		// Node.js https 优先 / Node.js https first
-		const fetched = await this.fetchHtmlViaNodeJs(url);
-		if (fetched) {
-			// Obsidian Publish SPA 壳检测（内容模式，非域名）→ fetch 原始 MD → 合成 HTML
-			// Obsidian Publish SPA shell detection (content pattern, not domain) → fetch raw MD → synthesize HTML
-			if (Downloader.isObsidianPublishShell(fetched.html)) {
-				const enriched = await this.enrichObsidianPublishHtml(fetched.html, url);
-				if (enriched) {
-					return { html: enriched, canonicalUrl: fetched.canonicalUrl, triedHeadless: false };
-				}
+	/**
+	 * HTML 获取：遍历 siteHandlers 注册表，匹配则用其策略；都不匹配则默认 headless。
+	 * HTML acquisition: iterate siteHandlers registry, use matched strategy; default to headless.
+	 */
+	private async acquireHtml(url: string): Promise<{ html: string | null; canonicalUrl: string }> {
+		for (const handler of this.siteHandlers) {
+			if (handler.matches(url)) {
+				return handler.acquire(url);
 			}
-			return { html: fetched.html, canonicalUrl: fetched.canonicalUrl, triedHeadless: false };
 		}
-
-		// Node.js 失败 → headless 兜底 / Node.js failed → headless fallback
+		// 默认：headless / Default: headless
 		const html = await this.headlessExtractor.extractRenderedHtml(url);
-		return { html, canonicalUrl: url, triedHeadless: true };
+		return { html, canonicalUrl: url };
 	}
 
 	/**
@@ -204,22 +255,17 @@ export class Downloader {
 	// ── Node.js https HTML 获取 / Node.js https HTML Fetch ──────────────────
 
 	/**
-	 * 通过 Node.js https 获取页面 HTML
-	 * Fetch page HTML via Node.js https
-	 *
-	 * 小红书需要特定 Referer 绕过防盗链，其他页面使用 origin 即可
-	 * XHS needs specific Referer for anti-hotlink; others use origin
+	 * 通过 Node.js https 获取页面 HTML。referer 由调用方（handler）决定。
+	 * Fetch page HTML via Node.js https. Referer is decided by the caller (handler).
 	 */
-	private fetchHtmlViaNodeJs(url: string): Promise<NodeFetchResult | null> {
-		const isXhs = /xiaohongshu\.com|xhslink\.com/i.test(url);
-		const referer = isXhs ? 'https://www.xiaohongshu.com/' : new URL(url).origin;
-		return this.doNodeFetch(url, 0, referer);
+	private fetchHtmlViaNodeJs(url: string, referer: string): Promise<NodeFetchResult | null> {
+		return Downloader.doNodeFetch(url, 0, referer);
 	}
 
 	/**
 	 * 递归获取 HTML，跟踪重定向 / Recursively fetch HTML, following redirects
 	 */
-	private doNodeFetch(requestUrl: string, redirectCount: number, referer: string): Promise<NodeFetchResult | null> {
+	private static doNodeFetch(requestUrl: string, redirectCount: number, referer: string): Promise<NodeFetchResult | null> {
 		if (redirectCount >= MAX_REDIRECTS) return Promise.resolve(null);
 
 		const protocol = new URL(requestUrl).protocol === 'http:' ? 'http' : 'https';
@@ -272,17 +318,7 @@ export class Downloader {
 		return match?.[1] ?? null;
 	}
 
-	// ── 域名检测 / Domain Detection ──────────────────────────────────────
-
-	/**
-	 * 检测是否为微信 URL / Check if WeChat URL
-	 *
-	 * 唯一需要跳过 Node.js 直连 headless 的域名。
-	 * Only domain that needs to skip Node.js entirely.
-	 */
-	private static isWeChatUrl(url: string): boolean {
-		return /mp\.weixin\.qq\.com/.test(url);
-	}
+	// ── Obsidian Publish / Obsidian Publish ──────────────────────────────────
 
 	/**
 	 * 检测是否为 Obsidian Publish URL / Check if Obsidian Publish URL
@@ -294,7 +330,7 @@ export class Downloader {
 	 * 从 SPA 壳 HTML 中提取 Obsidian Publish 的原始 Markdown API URL
 	 * Extract Obsidian Publish raw Markdown API URL from SPA shell HTML
 	 */
-	private static extractObsidianPublishApiUrl(html: string): string | null {
+	static extractObsidianPublishApiUrl(html: string): string | null {
 		const match = html.match(/window\.preloadPage=f\("([^"]+)"\)/);
 		return match?.[1] ?? null;
 	}
@@ -308,7 +344,7 @@ export class Downloader {
 	 * SPA shell signature: window.preloadPage points to .md API URL.
 	 * Content-pattern based, so custom domains are automatically covered.
 	 */
-	private static isObsidianPublishShell(html: string): boolean {
+	static isObsidianPublishShell(html: string): boolean {
 		return /window\.preloadPage=f\("https?:\/\/[^"]+\.md"\)/.test(html);
 	}
 
@@ -324,7 +360,7 @@ export class Downloader {
 	 * 非图片 wikilink（如 .md 笔记嵌入）保持原样。
 	 * Non-image wikilinks (e.g. .md note embeds) are left unchanged.
 	 */
-	private static resolveWikilinkImages(markdown: string, apiUrl: string): string {
+	static resolveWikilinkImages(markdown: string, apiUrl: string): string {
 		// 图片 wikilink / Image wikilink: ![[filename.image_ext]]
 		const IMAGE_WIKILINK_RE = /!\[\[([^\]]+\.(?:png|jpe?g|gif|svg|webp|bmp|ico))\]\]/gi;
 		// 从 API URL 提取 CDN base，拼接 Assets/
@@ -350,11 +386,11 @@ export class Downloader {
 	 * Synthesized HTML preserves <head> metadata (for MetadataExtractor),
 	 * body embeds raw MD in <script id="publish-markdown"> (for ObsidianPublishConverter).
 	 */
-	private async enrichObsidianPublishHtml(shellHtml: string, url: string): Promise<string | null> {
+	static async enrichObsidianPublishHtml(shellHtml: string, url: string): Promise<string | null> {
 		const apiUrl = Downloader.extractObsidianPublishApiUrl(shellHtml);
 		if (!apiUrl) return null;
 
-		const mdResult = await this.doNodeFetch(apiUrl, 0, new URL(url).origin);
+		const mdResult = await Downloader.doNodeFetch(apiUrl, 0, new URL(url).origin);
 		if (!mdResult) return null;
 
 		// 解析 ![[image.png]] 为 ![](绝对URL)，使 ImageHandler 能下载
