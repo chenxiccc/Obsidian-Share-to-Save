@@ -49,7 +49,7 @@ export class MetadataExtractor {
 			doc.querySelector('h1')?.textContent?.trim() || '',
 		].filter(Boolean);
 
-		const rawTitle = candidates[0] || 'Untitled';
+		const rawTitle = candidates[0] || '';
 		const siteName = MetadataExtractor.getSiteName(doc, schema);
 
 		return MetadataExtractor.stripSiteName(rawTitle, siteName);

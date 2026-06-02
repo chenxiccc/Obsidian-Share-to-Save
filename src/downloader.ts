@@ -131,7 +131,7 @@ export class Downloader {
 		if (Downloader.isExtractionSuccessful(parsed)) {
 			return this.saveNote(parsed, canonicalUrl, stsId, cleanUrl);
 		}
-		return { success: false, error: '无法提取页面内容 / Failed to extract page content' };
+		return this.saveFailedNote(canonicalUrl, cleanUrl, stsId, parsed);
 	}
 
 	/**
@@ -224,25 +224,57 @@ export class Downloader {
 	}
 
 	/**
-	 * 提取失败时生成占位笔记
-	 * Generate placeholder note when extraction fails
+	 * 提取失败时生成占位笔记。
+	 * Generate placeholder note when extraction fails.
+	 *
+	 * - parsed 有值（maybe_failed）：保留元数据 + 正文，打 maybe_failed 标签
+	 * - parsed 无值（占位）：save_failed_HHmmss.md，仅 source + created
+	 *
+	 * url 用于日志/调试，inputUrl 用于 frontmatter source（与 saveNote 语义一致）。
+	 * url is for logging/debugging; inputUrl is for frontmatter source (consistent with saveNote).
 	 */
-	async saveFailedNote(url: string): Promise<void> {
+	async saveFailedNote(url: string, inputUrl?: string, stsId?: string, parsed?: ParsedContent): Promise<ProcessResult> {
 		const now = new Date();
-		const hh = String(now.getHours()).padStart(2, '0');
-		const mm = String(now.getMinutes()).padStart(2, '0');
-		const ss = String(now.getSeconds()).padStart(2, '0');
-		const baseTitle = `save_failed_${hh}${mm}${ss}`;
-
 		const dirExists = await this.vault.adapter.exists(this.settings.outputFolder);
 		if (!dirExists) {
 			await this.vault.createFolder(this.settings.outputFolder);
 		}
 
+		if (parsed) {
+			// maybe_failed 路径：保留已有元数据和正文，打标签
+			// maybe_failed path: preserve existing metadata and content, tag as maybe_failed
+			const baseTitle = parsed.title
+				? (Downloader.sanitizeNoteTitle(parsed.title) || this.buildFallbackTitle(now))
+				: this.buildFallbackTitle(now);
+
+			const frontmatter = Downloader.buildFrontmatter(parsed, inputUrl || url, stsId || '', true);
+			const body = parsed.content + '\n' + this.t('failed.body');
+			const notePath = await this.resolveUniquePath(baseTitle);
+			await this.vault.create(notePath, frontmatter + '\n' + body);
+
+			return { success: true, title: baseTitle };
+		}
+
+		// 占位路径（无 parsed）：维持现有行为
+		// Placeholder path (no parsed): preserve existing behavior
+		const sourceForFrontmatter = inputUrl || url;
+		const baseTitle = this.buildFallbackTitle(now);
 		const notePath = await this.resolveUniquePath(baseTitle);
-		const frontmatter = `---\nsource: "${url}"\ncreated: ${now.toISOString().slice(0, 19)}\n---`;
+		const frontmatter = `---\nsource: "${sourceForFrontmatter}"\ncreated: ${now.toISOString().slice(0, 19)}\n---`;
 		const body = this.t('failed.body');
 		await this.vault.create(notePath, frontmatter + '\n' + body);
+
+		return { success: true, title: baseTitle };
+	}
+
+	/**
+	 * 生成 save_failed_HHmmss 回退文件名 / Build save_failed_HHmmss fallback filename
+	 */
+	private buildFallbackTitle(now: Date): string {
+		const hh = String(now.getHours()).padStart(2, '0');
+		const mm = String(now.getMinutes()).padStart(2, '0');
+		const ss = String(now.getSeconds()).padStart(2, '0');
+		return `save_failed_${hh}${mm}${ss}`;
 	}
 
 	/**
@@ -445,15 +477,26 @@ export class Downloader {
 
 	/**
 	 * 构建 YAML frontmatter / Build YAML frontmatter
+	 *
+	 * maybeFailed 为 true 时在 sts_id 后插入 tags: maybe_failed，
+	 * 使 Obsidian Tags 面板、搜索、图谱原生支持。
+	 * When maybeFailed is true, inserts tags: maybe_failed after sts_id,
+	 * enabling native Obsidian Tags panel, search, and graph support.
 	 */
 	static buildFrontmatter(
 		parsed: ParsedContent,
 		sourceUrl: string,
 		stsId: string,
+		maybeFailed?: boolean,
 	): string {
 		const lines: string[] = ['---'];
 		lines.push(`source: "${sourceUrl}"`);
 		lines.push(`sts_id: "${stsId}"`);
+
+		if (maybeFailed) {
+			lines.push('tags:');
+			lines.push('  - maybe_failed');
+		}
 
 		if (parsed.author) {
 			lines.push('author:');
