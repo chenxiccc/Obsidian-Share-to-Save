@@ -16,10 +16,18 @@ An Obsidian plugin that automatically downloads shared web pages as Markdown not
 
 ## Workflow
 
+### Mobile → Desktop
+
 1. Share a URL to Obsidian on your mobile device (system share menu or paste into the plugin)
-2. URL is written to the queue file under the Share-to-Save plugin folder
+2. URL is written to the queue file under the Share-to-Save folder
 3. Sync to your desktop (see [Sync Methods](#sync-methods) below)
 4. The desktop plugin detects the entry and automatically fetches the full web content, saving it as a `.md` note
+
+#### Desktop (Direct URL Input)
+
+- Click the left ribbon button (cloud download icon)
+- Paste text containing a URL, or paste a URL directly
+- Click "Save Now"
 
 ## Sync Methods
 
@@ -33,19 +41,6 @@ The plugin relies on file sync to transfer the queue file from mobile to desktop
 | Git                                                                            | Free | Manual push/pull | Versioned, but requires manual steps |
 
 **Recommendation:** [Fast Note Sync](https://github.com/haierkeys/obsidian-fast-note-sync/) provides near-instant queue delivery — your desktop starts downloading within seconds of sharing on mobile. Unlike iCloud it works cross-platform, and unlike Syncthing it needs no separate daemon.
-
-## Usage
-
-### Desktop (Direct URL Input)
-
-- Click the left ribbon button (cloud download icon)
-- Paste text containing a URL, or paste a URL directly
-- Click "Save Now"
-
-### Mobile (Share to Obsidian or add links in the plugin)
-
-- Share a web page from any app → select Obsidian → Save to Share to Save
-- Or tap the ribbon button inside Obsidian and paste the text
 
 ## Settings
 
@@ -70,7 +65,7 @@ MIT
 
 ---
 
-<a id="share-to-save中文说明"></a>
+`<a id="share-to-save中文说明"></a>`
 
 # Share to Save（中文）
 
@@ -87,11 +82,17 @@ Share to Save 是一款 Obsidian 插件，将分享的网页 URL 自动下载为
 - **小红书笔记** — 复制小红书链接，在插件中添加URL保存，本地保存笔记正文和全部图片。
 
 ## 工作流程
-
-1. 手机端分享 URL 到 Obsidian（系统分享菜单 或 插件中粘贴添加URL）
-2. URL 写入 Share-to-Save 插件文件夹下的队列文件
-3. 同步到桌面端（见下方[同步方式](#同步方式)）
-4. 桌面端插件检测到条目，自动获取网页全部内容，保存为 `.md` 笔记
+#### 手机分享或添加URL → 电脑自动下载
+1. 手机端分享通过分享按钮 分享到 Obsidian
+2. 在分享菜单里选择 保存到Share to Save
+3. 也可以 点击插件ribbon按钮，粘贴添加URL
+4. URL 写入 Share-to-Save文件夹下的队列文件
+5. 同步到桌面端（见下方[同步方式](#同步方式)）
+6. 桌面端插件检测到条目，自动获取网页全部内容，保存为 `.md` 笔记
+#### 桌面端（直接输入 URL）
+- 点击左侧 ribbon 按钮（云下载图标）
+- 粘贴包含 URL 的文本或直接粘贴 URL
+- 点击"立即保存"
 
 ## 同步方式
 
@@ -105,19 +106,6 @@ Share to Save 是一款 Obsidian 插件，将分享的网页 URL 自动下载为
 | Git                                                                            | 免费 | 需手动 push/pull | 有版本控制，但需手动操作 |
 
 **推荐：**[Fast Note Sync](https://github.com/haierkeys/obsidian-fast-note-sync/) 可实现近乎即时的队列传送——手机端分享后几秒内桌面端即开始下载。相比 iCloud 支持跨平台，相比 Syncthing 无需额外后台进程。
-
-## 使用
-
-### 桌面端（直接输入 URL）
-
-- 点击左侧 ribbon 按钮（云下载图标）
-- 粘贴包含 URL 的文本或直接粘贴 URL
-- 点击"立即保存"
-
-### 移动端（分享到 Obsidian 或在插件内添加链接）
-
-- 在任意 App 中分享网页 → 选择 Obsidian → 保存到 Share to Save
-- 或点击 Obsidian 内的 ribbon 按钮，粘贴文本
 
 ## 设置
 
