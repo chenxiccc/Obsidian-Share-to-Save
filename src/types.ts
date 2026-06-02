@@ -58,8 +58,3 @@ export interface ProcessResult {
 	error?: string;
 }
 
-// ─── 共享常量 / Shared Constants ─────────────────────────────────────────────
-
-/** Node.js 请求 / headless BrowserWindow / 图片下载共用的 Chrome UA */
-/** Shared Chrome UA for Node.js fetch / headless BrowserWindow / image download */
-export const CHROME_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.7778.215 Safari/537.36';

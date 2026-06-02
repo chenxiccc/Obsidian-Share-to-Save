@@ -6,7 +6,7 @@
  * Desktop only (depends on Electron remote.BrowserWindow)
  */
 
-import { CHROME_UA } from './types';
+import { CHROME_UA } from './http-utils';
 
 // ─── 常量 / Constants ──────────────────────────────────────────────────────────
 

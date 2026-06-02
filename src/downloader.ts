@@ -7,7 +7,7 @@
 
 import { Vault, normalizePath } from 'obsidian';
 import type { ParsedContent, ProcessResult, ShareToSaveSettings, Metadata } from './types';
-import { CHROME_UA } from './types';
+import { CHROME_UA, buildHeaders } from './http-utils';
 import { sanitizeFilename, isMarkdownViable } from './text-utils';
 import { ImageHandler } from './image-handler';
 import type { Translator } from './i18n';
@@ -138,7 +138,7 @@ export class Downloader {
 		const frontmatter = Downloader.buildFrontmatter(parsed, sourceUrl, stsId);
 		let mdContent = frontmatter + '\n' + parsed.content;
 
-		mdContent = await this.imageHandler.processContent(mdContent, safeTitle);
+		mdContent = await this.imageHandler.processContent(mdContent, safeTitle, sourceUrl);
 
 		const dirExists = await this.vault.adapter.exists(this.settings.outputFolder);
 		if (!dirExists) {
@@ -227,14 +227,8 @@ export class Downloader {
 		const mod = require(protocol) as typeof import('https');
 
 		return new Promise<NodeFetchResult | null>((resolve) => {
-			const req = mod.get(requestUrl, {
-				headers: {
-					'User-Agent': CHROME_UA,
-					'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
-					'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-					'Referer': referer,
-				},
-			}, (res: import('http').IncomingMessage) => {
+			const headers = buildHeaders(referer, 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8');
+			const req = mod.get(requestUrl, { headers }, (res: import('http').IncomingMessage) => {
 				// 处理重定向 / Handle redirect
 				if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
 					const redirectUrl = new URL(res.headers.location, requestUrl).toString();

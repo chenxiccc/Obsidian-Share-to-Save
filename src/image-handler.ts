@@ -7,7 +7,7 @@
  */
 
 import { Vault, normalizePath } from 'obsidian';
-import { CHROME_UA } from './types';
+import { CHROME_UA, buildHeaders } from './http-utils';
 import { sanitizeFilename as sanitizeForFs } from './text-utils';
 
 /** 匹配 Markdown 图片语法 / Match Markdown image syntax */
@@ -157,6 +157,7 @@ export class ImageHandler {
 	async processContent(
 		markdown: string,
 		noteTitle: string,
+		sourceUrl?: string,
 	): Promise<string> {
 		// 确保附件目录存在 / Ensure attachments directory exists
 		await this.ensureAttachmentsDir();
@@ -166,10 +167,10 @@ export class ImageHandler {
 		const dedupMap = new Map<string, string>();
 
 		// 第一遍：处理图片 / First pass: images
-		markdown = await this.processMatches(markdown, IMG_URL_REGEX, noteTitle, dedupMap);
+		markdown = await this.processMatches(markdown, IMG_URL_REGEX, noteTitle, dedupMap, sourceUrl);
 
 		// 第二遍：处理文件链接 / Second pass: file links
-		markdown = await this.processMatches(markdown, FILE_URL_REGEX, noteTitle, dedupMap);
+		markdown = await this.processMatches(markdown, FILE_URL_REGEX, noteTitle, dedupMap, sourceUrl);
 
 		return markdown;
 	}
@@ -182,6 +183,7 @@ export class ImageHandler {
 		regex: RegExp,
 		noteTitle: string,
 		dedupMap: Map<string, string>,
+		sourceUrl?: string,
 	): Promise<string> {
 		const matches: Array<{ full: string; alt: string; url: string }> = [];
 		const re = new RegExp(regex.source, 'g');
@@ -212,7 +214,7 @@ export class ImageHandler {
 				const localPath = `${this.attachmentsDir}/${filename}`;
 
 			// 下载图片 / Download image
-			const buffer = await this.nodeHttpsGetBuffer(url);
+			const buffer = await this.nodeHttpsGetBuffer(url, sourceUrl);
 
 			// 内容哈希去重：同一次批处理中相同内容复用第一个 wikilink
 			// Content hash dedup: same content within a batch reuses first wikilink
@@ -273,7 +275,7 @@ export class ImageHandler {
 	 * 通过 Node.js https.get 获取二进制数据
 	 * Fetch binary data via Node.js https.get
 	 */
-	private nodeHttpsGetBuffer(url: string): Promise<Buffer> {
+	private nodeHttpsGetBuffer(url: string, sourceUrl?: string): Promise<Buffer> {
 		// 根据协议动态选择模块，支持 HTTP 和 HTTPS / Select module by protocol, support both HTTP and HTTPS
 		const protocol = new URL(url).protocol === 'http:' ? 'http' : 'https';
 		// eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -281,18 +283,8 @@ export class ImageHandler {
 
 		return new Promise<Buffer>((resolve, reject) => {
 			const doRequest = (requestUrl: string): void => {
-				// 微信 CDN 图片需要 Referer 绕过防盗链 / WeChat CDN images need Referer to bypass hotlink protection
-				const isWeChatCdn = /qpic\.cn/.test(requestUrl);
-				const imgHeaders: Record<string, string> = {
-					'User-Agent': CHROME_UA,
-					'Accept': 'image/*, */*',
-				};
-				if (isWeChatCdn) {
-					imgHeaders['Referer'] = 'https://mp.weixin.qq.com/';
-				}
-				const req = mod.get(requestUrl, {
-					headers: imgHeaders,
-				}, (res) => {
+				const headers = buildHeaders(sourceUrl, 'image/*, */*');
+				const req = mod.get(requestUrl, { headers }, (res) => {
 					// 处理重定向 / Handle redirect
 					if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
 						doRequest(res.headers.location);
