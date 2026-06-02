@@ -129,7 +129,7 @@ export class Downloader {
 		}
 
 		if (Downloader.isExtractionSuccessful(parsed)) {
-			return this.saveNote(parsed, canonicalUrl, stsId);
+			return this.saveNote(parsed, canonicalUrl, stsId, cleanUrl);
 		}
 		return { success: false, error: '无法提取页面内容 / Failed to extract page content' };
 	}
@@ -187,13 +187,13 @@ export class Downloader {
 	 * 统一下游保存逻辑：sanitize → frontmatter → images → vault
 	 * Unified downstream save: sanitize → frontmatter → images → vault
 	 */
-	private async saveNote(parsed: ParsedContent, sourceUrl: string, stsId: string): Promise<ProcessResult> {
+	private async saveNote(parsed: ParsedContent, canonicalUrl: string, stsId: string, inputUrl: string): Promise<ProcessResult> {
 		const safeTitle = Downloader.sanitizeNoteTitle(parsed.title || 'Untitled');
 
-		const frontmatter = Downloader.buildFrontmatter(parsed, sourceUrl, stsId);
+		const frontmatter = Downloader.buildFrontmatter(parsed, inputUrl, stsId);
 		let mdContent = frontmatter + '\n' + parsed.content;
 
-		mdContent = await this.imageHandler.processContent(mdContent, safeTitle, sourceUrl);
+		mdContent = await this.imageHandler.processContent(mdContent, safeTitle, canonicalUrl);
 
 		const dirExists = await this.vault.adapter.exists(this.settings.outputFolder);
 		if (!dirExists) {
