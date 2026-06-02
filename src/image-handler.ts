@@ -142,6 +142,38 @@ export class ImageHandler {
 	}
 
 	/**
+	 * 预处理：剥离 linked image/file 的外层 Markdown 链接。
+	 * defuddle 将 <a><img></a> 转为 [![alt](img-url)](link-url) 是完全合法的 Markdown，
+	 * 但图片下载后 wikilink 不支持嵌套在 markdown 链接中（[![[wikilink]](url) 无效），
+	 * 因此先扁平化为 ![alt](img-url) / [text](file-url)，后续管线统一处理。
+	 *
+	 * Pre-process: strip outer markdown link wrapper from linked images/files.
+	 * defuddle converts <a><img></a> → [![alt](img-url)](link-url) (valid Markdown),
+	 * but wikilinks can't be nested in markdown links after localization
+	 * ([![[wikilink]](url) is invalid). Flatten them first so downstream handles uniformly.
+	 *
+	 * 参考 obsidian-auto-download-images-after-web-clipping 的 linked-image-first 策略
+	 * Based on obsidian-auto-download-images-after-web-clipping's linked-image-first strategy
+	 */
+	private static stripLinkedImageOuterLink(markdown: string): string {
+		// 链接图片：[...] 内恰好一个完整图片时，剥离外层链接
+		// Linked image: when [...] body is exactly one image, strip outer link
+		markdown = markdown.replace(
+			/\[(!\[[^\]]*\]\(https?:\/\/[^)\s]+\))\]\(https?:\/\/[^)\s]+\)/g,
+			'$1',
+		);
+
+		// 链接文件：[...] 内恰好一个文件链接时，剥离外层链接
+		// Linked file: when [...] body is exactly one file link, strip outer link
+		markdown = markdown.replace(
+			/\[(\[[^\]]*\]\(https?:\/\/[^)\s]+\))\]\(https?:\/\/[^)\s]+\)/g,
+			'$1',
+		);
+
+		return markdown;
+	}
+
+	/**
 	 * 处理 markdown 内容中的外链图片和文件：
 	 * 1. 正则匹配 ![](url) 和 [text](url)
 	 * 2. 跳过已为 wikilink 格式的链接
@@ -161,6 +193,12 @@ export class ImageHandler {
 	): Promise<string> {
 		// 确保附件目录存在 / Ensure attachments directory exists
 		await this.ensureAttachmentsDir();
+
+		// 预处理：linked image/file 本地化后 wikilink 不支持嵌套在 markdown 链接中，
+		// 将 [![alt](img-url)](link-url) → ![alt](img-url)（丢弃外层链接 URL）
+		// Pre-processing: wikilink can't be nested in markdown links after localization,
+		// flatten [![alt](img-url)](link-url) → ![alt](img-url) (discard outer link URL)
+		markdown = ImageHandler.stripLinkedImageOuterLink(markdown);
 
 		// 批量去重映射：content hash → wikilink
 		// Batch dedup map: content hash → wikilink
