@@ -319,8 +319,37 @@ export class Downloader {
 	}
 
 	/**
-	 * 从 SPA 壳提取 API URL → fetch 原始 Markdown → 合成 HTML
-	 * Extract API URL from SPA shell → fetch raw Markdown → synthesize HTML
+	 * 将 Obsidian Publish 原始 Markdown 中的 ![[image.png]] wikilink 解析为 ![](绝对URL)。
+	 * Resolve ![[image.png]] wikilinks in Obsidian Publish raw Markdown to ![](absolute URL).
+	 *
+	 * Obsidian Publish CDN 结构：Markdown 和附件共享同一 base URL，
+	 * 附件统一放在 Assets/ 目录下。
+	 * Obsidian Publish CDN structure: Markdown and attachments share the same base URL,
+	 * attachments are always under the Assets/ directory.
+	 *
+	 * 非图片 wikilink（如 .md 笔记嵌入）保持原样。
+	 * Non-image wikilinks (e.g. .md note embeds) are left unchanged.
+	 */
+	private static resolveWikilinkImages(markdown: string, apiUrl: string): string {
+		// 图片 wikilink / Image wikilink: ![[filename.image_ext]]
+		const IMAGE_WIKILINK_RE = /!\[\[([^\]]+\.(?:png|jpe?g|gif|svg|webp|bmp|ico))\]\]/gi;
+		// 从 API URL 提取 CDN base，拼接 Assets/
+		// Extract CDN base from API URL, append Assets/
+		// apiUrl 格式: https://.../access/{hash}/...
+		// imageUrl 格式: https://.../access/{hash}/Assets/filename
+		const cdnMatch = apiUrl.match(/^(.*\/access\/[^/]+\/)/);
+		if (!cdnMatch) return markdown;
+		const cdnBase = cdnMatch[1] + 'Assets/';
+		return markdown.replace(IMAGE_WIKILINK_RE, (_full: string, filename: string) => {
+			return `![](${cdnBase}${encodeURIComponent(filename)})`;
+		});
+	}
+
+	/**
+	 * 从 SPA 壳提取 API URL → fetch 原始 Markdown → 合成 HTML。
+	 * 其中 ![[image.png]] wikilink 被解析为 ![](绝对URL)，使 ImageHandler 能下载图片。
+	 * Extract API URL from SPA shell → fetch raw Markdown → synthesize HTML.
+	 * ![[image.png]] wikilinks are resolved to ![](absolute URL) so ImageHandler can download images.
 	 *
 	 * 合成 HTML 保留 <head> 元数据（供 MetadataExtractor 使用），
 	 * <body> 中嵌入 <script id="publish-markdown"> 存放原始 MD（供 ObsidianPublishConverter 提取）。
@@ -334,6 +363,10 @@ export class Downloader {
 		const mdResult = await this.doNodeFetch(apiUrl, 0, new URL(url).origin);
 		if (!mdResult) return null;
 
+		// 解析 ![[image.png]] 为 ![](绝对URL)，使 ImageHandler 能下载
+		// Resolve ![[image.png]] to ![](absolute URL) so ImageHandler can download
+		const resolvedMd = Downloader.resolveWikilinkImages(mdResult.html, apiUrl);
+
 		// 保留 SPA 壳 <head> 内容（title、og:description 等 meta 标签）
 		// Preserve SPA shell <head> content (title, og:description, etc.)
 		const headMatch = shellHtml.match(/<head[^>]*>([\s\S]*?)<\/head>/i);
@@ -341,13 +374,10 @@ export class Downloader {
 
 		// 转义 Markdown 中极罕见的 </script> 字符串
 		// Escape extremely rare </script> in Markdown
-		const safeMd = mdResult.html.replace(/<\/script>/gi, '<\\/script>');
+		const safeMd = resolvedMd.replace(/<\/script>/gi, '<\\/script>');
 
 		return `<!DOCTYPE html><html><head>${headContent}</head><body><script type="text/plain" id="publish-markdown">${safeMd}<\/script></body></html>`;
 	}
-
-
-
 
 	// ── 工具方法 / Utility Methods ──────────────────────────────────────────
 
