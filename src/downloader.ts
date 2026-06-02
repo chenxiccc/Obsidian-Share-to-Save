@@ -94,6 +94,9 @@ function createOpHandler(fetchFn: FetchFn, headless: HeadlessExtractor): SiteHan
 }
 
 export class Downloader {
+	/** OP 文件清单缓存 / OP file manifest cache (hash → filename → path)，跨页面复用 */
+	private static opCacheMap = new Map<string, Map<string, string>>();
+
 	private readonly imageHandler: ImageHandler;
 	private readonly headlessExtractor: HeadlessExtractor;
 	private readonly siteHandlers: SiteHandler[];
@@ -397,37 +400,94 @@ export class Downloader {
 	}
 
 	/**
-	 * 将 Obsidian Publish 原始 Markdown 中的 ![[image.png]] wikilink 解析为 ![](绝对URL)。
-	 * Resolve ![[image.png]] wikilinks in Obsidian Publish raw Markdown to ![](absolute URL).
+	 * 从 SPA 壳 HTML 提取 siteInfo（uid + host），用于后续 cache endpoint 请求
+	 * Extract siteInfo (uid + host) from SPA shell HTML for cache endpoint requests
+	 */
+	static extractSiteInfo(html: string): { uid: string; host: string } | null {
+		const siteInfoMatch = html.match(/window\.siteInfo\s*=\s*({[^}]+})/);
+		const siteInfoJson = siteInfoMatch?.[1];
+		if (!siteInfoJson) return null;
+		try {
+			const info = JSON.parse(siteInfoJson) as { uid?: string; host?: string };
+			if (info.uid && info.host) return { uid: info.uid, host: info.host };
+		} catch { /* JSON 解析失败 / JSON parse failure */ }
+		return null;
+	}
+
+	/**
+	 * 获取 OP 文件清单，按 hash 内存缓存（首次 fetch，后续命中缓存）
+	 * Fetch OP file manifest, cached by hash in memory (fetched once, cached thereafter)
 	 *
-	 * Obsidian Publish CDN 结构：Markdown 和附件共享同一 base URL，
-	 * 附件统一放在 Assets/ 目录下。
-	 * Obsidian Publish CDN structure: Markdown and attachments share the same base URL,
-	 * attachments are always under the Assets/ directory.
+	 * 返回 Map<filename, vaultRelativePath>，如 "command.png" → "Assets/command.png"
+	 * Returns Map<filename, vaultRelativePath>, e.g. "command.png" → "Assets/command.png"
+	 */
+	private static async fetchObsidianPublishCache(host: string, uid: string): Promise<Map<string, string> | null> {
+		const cacheKey = `${host}/${uid}`;
+		const cached = Downloader.opCacheMap.get(cacheKey);
+		if (cached) return cached;
+
+		const url = `https://${host}/cache/${uid}`;
+		try {
+			const result = await Downloader.doNodeFetch(url, 0, `https://${host}/`);
+			if (!result) return null;
+			const data = JSON.parse(result.html) as Record<string, unknown>;
+			const fileMap = new Map<string, string>();
+			for (const filePath of Object.keys(data)) {
+				const filename = filePath.split('/').pop()!;
+				// 同名文件以第一个为准（vault 内文件名不应重复）
+				// First occurrence wins for duplicate filenames (shouldn't exist in vault)
+				if (!fileMap.has(filename)) {
+					fileMap.set(filename, filePath);
+				}
+			}
+			Downloader.opCacheMap.set(cacheKey, fileMap);
+			return fileMap;
+		} catch {
+			return null;
+		}
+	}
+
+	/**
+	 * 将 OP 原始 Markdown 中的 ![[image.png]] wikilink 解析为 ![](CDN绝对URL)。
+	 * Resolve ![[image.png]] wikilinks in OP raw Markdown to ![](CDN absolute URL).
+	 *
+	 * 优先通过 fileMap（fetchObsidianPublishCache 返回）查找精确路径，
+	 * fileMap 不可用时回退硬编码 Assets/（当前行为）。
+	 * Prefer exact path via fileMap (from fetchObsidianPublishCache),
+	 * fallback to hardcoded Assets/ when fileMap unavailable (current behavior).
 	 *
 	 * 非图片 wikilink（如 .md 笔记嵌入）保持原样。
 	 * Non-image wikilinks (e.g. .md note embeds) are left unchanged.
+	 *
+	 * @param markdown 原始 Markdown / Raw Markdown
+	 * @param fileMap  文件名→路径映射（null 时回退 Assets/）/ filename→path map (fallback to Assets/ when null)
+	 * @param cdnBase CDN 根路径（不含 Assets/），如 https://.../access/{hash}/
 	 */
-	static resolveWikilinkImages(markdown: string, apiUrl: string): string {
-		// 图片 wikilink / Image wikilink: ![[filename.image_ext]]
+	static resolveWikilinkImages(markdown: string, fileMap: Map<string, string> | null, cdnBase: string): string {
 		const IMAGE_WIKILINK_RE = /!\[\[([^\]]+\.(?:png|jpe?g|gif|svg|webp|bmp|ico))\]\]/gi;
-		// 从 API URL 提取 CDN base，拼接 Assets/
-		// Extract CDN base from API URL, append Assets/
-		// apiUrl 格式: https://.../access/{hash}/...
-		// imageUrl 格式: https://.../access/{hash}/Assets/filename
-		const cdnMatch = apiUrl.match(/^(.*\/access\/[^/]+\/)/);
-		if (!cdnMatch) return markdown;
-		const cdnBase = cdnMatch[1] + 'Assets/';
 		return markdown.replace(IMAGE_WIKILINK_RE, (_full: string, filename: string) => {
-			return `![](${cdnBase}${encodeURIComponent(filename)})`;
+			if (fileMap) {
+				const filePath = fileMap.get(filename);
+				if (filePath) {
+					return `![](${cdnBase}${encodeURIComponent(filePath)})`;
+				}
+			}
+			// 回退硬编码 Assets/ / Fallback to hardcoded Assets/
+			return `![](${cdnBase}Assets/${encodeURIComponent(filename)})`;
 		});
 	}
 
 	/**
-	 * 从 SPA 壳提取 API URL → fetch 原始 Markdown → 合成 HTML。
-	 * 其中 ![[image.png]] wikilink 被解析为 ![](绝对URL)，使 ImageHandler 能下载图片。
-	 * Extract API URL from SPA shell → fetch raw Markdown → synthesize HTML.
-	 * ![[image.png]] wikilinks are resolved to ![](absolute URL) so ImageHandler can download images.
+	 * 从 SPA 壳提取 API URL → fetch 原始 Markdown + 文件清单 → 合成 HTML。
+	 * Extract API URL from SPA shell → fetch raw Markdown + file manifest → synthesize HTML.
+	 *
+	 * 步骤 / Steps:
+	 *   1. extractObsidianPublishApiUrl → 提取 MD API URL
+	 *   2. extractSiteInfo → 提取 uid + host
+	 *   3. doNodeFetch(apiUrl) → 获取原始 Markdown
+	 *   4. fetchObsidianPublishCache(host, uid) → 获取文件清单（内存缓存，首次请求）
+	 *   5. resolveWikilinkImages(md, fileMap, cdnBase) → 解析 ![[image.png]] wikilink
+	 *   6. 合成 HTML：<head> 元数据 + <script id="publish-markdown"> 嵌入 MD
 	 *
 	 * 合成 HTML 保留 <head> 元数据（供 MetadataExtractor 使用），
 	 * <body> 中嵌入 <script id="publish-markdown"> 存放原始 MD（供 ObsidianPublishConverter 提取）。
@@ -441,9 +501,20 @@ export class Downloader {
 		const mdResult = await Downloader.doNodeFetch(apiUrl, 0, new URL(url).origin);
 		if (!mdResult) return null;
 
-		// 解析 ![[image.png]] 为 ![](绝对URL)，使 ImageHandler 能下载
-		// Resolve ![[image.png]] to ![](absolute URL) so ImageHandler can download
-		const resolvedMd = Downloader.resolveWikilinkImages(mdResult.html, apiUrl);
+		// 获取文件清单以精确解析 wikilink 路径（首次 fetch，后续命中内存缓存）
+		// Get file manifest for exact wikilink path resolution (fetched once, cached in memory)
+		const siteInfo = Downloader.extractSiteInfo(shellHtml);
+		let fileMap: Map<string, string> | null = null;
+		if (siteInfo) {
+			fileMap = await Downloader.fetchObsidianPublishCache(siteInfo.host, siteInfo.uid);
+		}
+
+		// CDN base 不含 Assets/（由 resolveWikilinkImages 内部处理）
+		// CDN base without Assets/ (handled internally by resolveWikilinkImages)
+		const cdnMatch = apiUrl.match(/^(.*\/access\/[^/]+\/)/);
+		const cdnBase = cdnMatch?.[1] ?? '';
+
+		const resolvedMd = Downloader.resolveWikilinkImages(mdResult.html, fileMap, cdnBase);
 
 		// 保留 SPA 壳 <head> 内容（title、og:description 等 meta 标签）
 		// Preserve SPA shell <head> content (title, og:description, etc.)
