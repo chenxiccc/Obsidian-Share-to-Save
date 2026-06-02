@@ -40,7 +40,7 @@ type FetchFn = (url: string, referer: string) => Promise<NodeFetchResult | null>
 interface SiteHandler {
 	readonly name: string;
 	matches(url: string): boolean;
-	acquire(url: string): Promise<{ html: string | null; canonicalUrl: string }>;
+	acquire(url: string): Promise<{ html: string | null; canonicalUrl: string | null }>;
 }
 
 /**
@@ -53,7 +53,7 @@ function createWechatHandler(headless: HeadlessExtractor): SiteHandler {
 		matches: (url) => /mp\.weixin\.qq\.com/.test(url),
 		acquire: async (url) => {
 			const html = await headless.extractRenderedHtml(url);
-			return { html, canonicalUrl: url };
+			return { html, canonicalUrl: null };
 		},
 	};
 }
@@ -68,7 +68,7 @@ function createXhsHandler(fetchFn: FetchFn): SiteHandler {
 		matches: (url) => /xiaohongshu\.com|xhslink\.com/i.test(url),
 		acquire: async (url) => {
 			const fetched = await fetchFn(url, 'https://www.xiaohongshu.com/');
-			return { html: fetched?.html ?? null, canonicalUrl: fetched?.canonicalUrl ?? url };
+			return { html: fetched?.html ?? null, canonicalUrl: fetched?.canonicalUrl ?? null };
 		},
 	};
 }
@@ -88,7 +88,7 @@ function createOpHandler(fetchFn: FetchFn, headless: HeadlessExtractor): SiteHan
 				if (enriched) return { html: enriched, canonicalUrl: fetched.canonicalUrl };
 			}
 			const html = await headless.extractRenderedHtml(url);
-			return { html, canonicalUrl: url };
+			return { html, canonicalUrl: null };
 		},
 	};
 }
@@ -171,12 +171,16 @@ export class Downloader {
 	private async acquireHtml(url: string): Promise<{ html: string | null; canonicalUrl: string }> {
 		for (const handler of this.siteHandlers) {
 			if (handler.matches(url)) {
-				return handler.acquire(url);
+				const result = await handler.acquire(url);
+				return {
+					html: result.html,
+					canonicalUrl: result.canonicalUrl ?? Downloader.resolveCanonicalUrl(result.html, url),
+				};
 			}
 		}
 		// 默认：headless / Default: headless
 		const html = await this.headlessExtractor.extractRenderedHtml(url);
-		return { html, canonicalUrl: url };
+		return { html, canonicalUrl: Downloader.resolveCanonicalUrl(html, url) };
 	}
 
 	/**
@@ -316,6 +320,18 @@ export class Downloader {
 	private static extractCanonicalUrl(html: string): string | null {
 		const match = html.match(/<meta[^>]*property="og:url"[^>]*content="([^"]*)"/i);
 		return match?.[1] ?? null;
+	}
+
+	/**
+	 * 从 HTML 解析 canonical URL，失败则回退。处理 html 为 null 的情况。
+	 * Resolve canonical URL from HTML, fallback if unavailable. Handles null html.
+	 */
+	private static resolveCanonicalUrl(html: string | null, fallbackUrl: string): string {
+		if (html) {
+			const canonical = Downloader.extractCanonicalUrl(html);
+			if (canonical) return canonical;
+		}
+		return fallbackUrl;
 	}
 
 	// ── Obsidian Publish / Obsidian Publish ──────────────────────────────────
