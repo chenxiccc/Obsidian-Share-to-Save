@@ -20,10 +20,8 @@ const POLL_INTERVAL_MS = 1_000;
 const NETWORK_IDLE_MS = 1_000;
 /** DOM 稳定阈值：无 MutationObserver 变化的持续时间 / DOM stable: duration without MutationObserver changes */
 const DOM_STABLE_MS = 500;
-/** 内容就绪最小字符数 / Content ready minimum character count */
-const CONTENT_MIN_CHARS = 1_000;
-/** 中等超时兜底字符数 / Medium timeout fallback character count */
-const CONTENT_FALLBACK_CHARS = 200;
+/** 内容稳定所需连续检查次数 / Consecutive stable checks required for content stability */
+const CONTENT_STABLE_CHECKS = 2;
 
 const BROWSER_PARTITION = 'persist:share-to-save';
 
@@ -35,7 +33,7 @@ interface ElectronWebContents {
 	executeJavaScript(code: string): Promise<unknown>;
 	session?: {
 		webRequest?: {
-			onBeforeRequest(callback: (details: { url: string }) => void): void;
+			onBeforeRequest(callback: (details: { url: string }, cb?: (opts: Record<string, unknown>) => void) => void): void;
 			onCompleted(callback: (details: { url: string }) => void): void;
 			onErrorOccurred(callback: (details: { url: string }) => void): void;
 		};
@@ -161,7 +159,10 @@ export class HeadlessExtractor {
 			const session = win.webContents.session;
 			if (!session?.webRequest) return;
 
-			const onBefore = () => { state.pendingCount++; };
+			const onBefore = (_details: unknown, cb?: (opts: Record<string, unknown>) => void) => {
+				state.pendingCount++;
+				if (cb) cb({});
+			};
 			const onDone = () => { state.pendingCount = Math.max(0, state.pendingCount - 1); };
 
 			session.webRequest.onBeforeRequest(onBefore);
@@ -274,40 +275,36 @@ export class HeadlessExtractor {
 		}
 	}
 
-	// ── 内容就绪检查 / Content Ready Check ─────────────────────────────────
+	// ── 内容稳定检查 / Content Stable Check ──────────────────────────────
 
 	/**
-	 * 即时检查页面内容是否就绪。
-	 * Check if page content is ready.
+	 * 即时检查页面内容是否稳定。
+	 * Check if page content is currently stable.
+	 *
+	 * 稳定定义：body.innerText.length 与上次检查相同且 > 0。
+	 * Stable definition: body.innerText.length unchanged from last check and > 0.
+	 *
+	 * @param state.lastLen 上次检查长度 / Length from last check
+	 * @param state.stableCount 连续稳定次数 / Consecutive stable count
+	 * @returns 是否达到 CONTENT_STABLE_CHECKS 次连续稳定 / Whether CONTENT_STABLE_CHECKS consecutive stables reached
 	 */
-	private async checkContentReady(win: ElectronBrowserWindow): Promise<boolean> {
+	private async checkContentStable(
+		win: ElectronBrowserWindow,
+		state: { lastLen: number; stableCount: number },
+	): Promise<boolean> {
 		try {
-			const ready: boolean = await win.webContents.executeJavaScript(
-				'(function() {' +
-				'  var textLen = (document.body && document.body.innerText || "").trim().length;' +
-				'  var hasHeading = !!document.querySelector("h1, h2, h3");' +
-				'  var hasArticle = !!document.querySelector("article, main, [role=\\"main\\"]");' +
-				'  return textLen > ' + CONTENT_MIN_CHARS + ' && (hasHeading || hasArticle);' +
-				'})()'
-			) as boolean;
-			return ready;
+			const currentLen: number = await win.webContents.executeJavaScript(
+				'((document.body && document.body.innerText) || "").trim().length'
+			) as number;
+			if (currentLen > 0 && currentLen === state.lastLen) {
+				state.stableCount++;
+			} else {
+				state.stableCount = 0;
+			}
+			state.lastLen = currentLen;
+			return state.stableCount >= CONTENT_STABLE_CHECKS;
 		} catch {
 			return false;
-		}
-	}
-
-	/**
-	 * 获取 body.innerText 长度（用于兜底判断）。
-	 * Get body.innerText length (for fallback check).
-	 */
-	private async getTextLength(win: ElectronBrowserWindow): Promise<number> {
-		try {
-			const len: number = await win.webContents.executeJavaScript(
-				'(document.body && (document.body.innerText || "").trim().length) || 0'
-			) as number;
-			return len;
-		} catch {
-			return 0;
 		}
 	}
 
@@ -316,6 +313,9 @@ export class HeadlessExtractor {
 	/**
 	 * 主轮询循环：每 POLL_INTERVAL_MS 检查三种信号，满足条件时返回。
 	 * Main polling loop: check three signals every POLL_INTERVAL_MS, return when condition met.
+	 *
+	 * 内容就绪使用内容稳定检测（body.innerText 停止增长），无固定字符数阈值。
+	 * Content ready uses content stability detection (body.innerText stops growing), no fixed char threshold.
 	 *
 	 * @param startTime extractRenderedHtml 开始时间戳，用于全局超时计算
 	 */
@@ -327,6 +327,9 @@ export class HeadlessExtractor {
 		// 注入 MutationObserver（只执行一次）/ Inject MutationObserver (once)
 		await this.injectDomObserver(win);
 
+		// 内容稳定状态 / Content stability state
+		const contentState = { lastLen: 0, stableCount: 0 };
+
 		while (true) {
 			await new Promise(r => setTimeout(r, POLL_INTERVAL_MS));
 
@@ -334,17 +337,17 @@ export class HeadlessExtractor {
 
 			const networkIdle = this.checkNetworkIdle(networkState);
 			const domStable = await this.checkDomStable(win);
-			const contentReady = await this.checkContentReady(win);
+			const contentStable = await this.checkContentStable(win, contentState);
 
 			// 条件 1：全部就绪 → 立即返回
 			// Condition 1: all ready → return immediately
-			if (networkIdle && domStable && contentReady) {
+			if (networkIdle && domStable && contentStable) {
 				return;
 			}
 
-			// 条件 2：DOM 稳定 + 内容就绪（网络可能长连接/WebSocket 永不空闲）
-			// Condition 2: DOM stable + content ready (network may never idle due to WebSocket)
-			if (domStable && contentReady) {
+			// 条件 2：DOM 稳定 + 内容稳定（网络可能长连接/WebSocket 永不空闲）
+			// Condition 2: DOM stable + content stable (network may never idle due to WebSocket)
+			if (domStable && contentStable) {
 				await new Promise(r => setTimeout(r, 2000));
 				return;
 			}
@@ -353,15 +356,6 @@ export class HeadlessExtractor {
 			// Condition 3: global timeout 30s (from startTime, not from polling start)
 			if (elapsed > TOTAL_TIMEOUT_MS) {
 				return;
-			}
-
-			// 条件 4：15s + 有基本内容 → 兜底返回
-			// Condition 4: 15s + has basic content → fallback return
-			if (elapsed > 15_000) {
-				const textLen = await this.getTextLength(win);
-				if (textLen > CONTENT_FALLBACK_CHARS) {
-					return;
-				}
 			}
 		}
 	}
