@@ -423,6 +423,7 @@ interface XhsNoteUser {
 
 interface XhsNote {
 	type?: string;
+	title?: string;
 	desc?: string | string[];
 	imageList?: XhsNoteImage[];
 	user?: XhsNoteUser;
@@ -499,12 +500,18 @@ class XiaohongshuConverter implements ContentConverter {
 		//                  author extracted from note.user in __INITIAL_STATE__
 		const metadataPatch: Partial<Metadata> = {};
 
-		// 从 <title> 提取的标题含 " - 小红书" 后缀，除去
-		// Title from <title> has " - 小红书" suffix, strip it
-		const rawTitle = doc.querySelector('title')?.textContent?.trim() || '';
-		const cleanedTitle = rawTitle.replace(/\s*-\s*小红书\s*$/, '').trim();
-		if (cleanedTitle && cleanedTitle !== rawTitle) {
-			metadataPatch.title = cleanedTitle;
+		// 标题优先从 __INITIAL_STATE__ 取 note.title（真实标题，无后缀）
+		// 为空时回退 <title> 标签，剥离 " - 小红书" 后缀
+		// Title priority: note.title (real title, no suffix)
+		// Fallback: <title> tag, strip " - 小红书" suffix
+		if (note.title) {
+			metadataPatch.title = note.title;
+		} else {
+			const rawTitle = doc.querySelector('title')?.textContent?.trim() || '';
+			const cleanedTitle = rawTitle.replace(/\s*-\s*小红书\s*$/, '').trim();
+			if (cleanedTitle && cleanedTitle !== rawTitle) {
+				metadataPatch.title = cleanedTitle;
+			}
 		}
 
 		// author 从 note.user 提取（MetadataExtractor 的 meta 标签在 XHS 为空）

@@ -1,7 +1,7 @@
 /**
- * 文本工具函数：词数统计、内容质量评估、Obsidian 标签转义、Markdown 链接转义、文件名清理
+ * 文本工具函数：词数统计、内容质量评估、Obsidian 标签转义、Markdown 链接转义、文件名清理、标题规范化
  * Text utilities: word counting, content quality assessment, Obsidian tag escaping,
- * Markdown link escaping, filename sanitization
+ * Markdown link escaping, filename sanitization, title normalization
  *
  * 所有函数均为纯字符串转换，零外部依赖。
  * All functions are pure string transformations with zero external dependencies.
@@ -92,4 +92,34 @@ export function sanitizeFilename(name: string, maxLength?: number): string {
 		result = result.slice(0, maxLength);
 	}
 	return result;
+}
+
+// ─── 标题规范化 / Title Normalization ──────────────────────────────────────
+
+/**
+ * 白名单：Unicode 字母 + 数字 + 空格 + 少量标点。其余字符全部移除。
+ * Whitelist: Unicode letters + numbers + space + limited punctuation. All else removed.
+ *
+ * \p{L} 涵盖全部 Unicode 书写系统（中文/英文/日文/韩文/阿拉伯文等），
+ * 自动排除 emoji、零宽字符、控制符、数学符号等。
+ * \p{L} covers all Unicode writing systems (CJK/Latin/Japanese/Korean/Arabic/etc.),
+ * automatically excluding emoji, zero-width chars, control chars, math symbols, etc.
+ */
+const TITLE_ALLOWED_RE = /[^\p{L}\p{N}\s\-_.,、。！？：；""''（）【】《》…—·]/gu;
+
+/**
+ * 规范化标题：去特殊字符 → 合并空白 → 截断到指定长度。
+ * Normalize title: remove special chars → collapse whitespace → truncate to max length.
+ *
+ * 先白名单过滤再截断，确保截断的是有效字符数。
+ * Characters are counted as UTF-16 code units: 1 Chinese char = 1, 1 English letter = 1.
+ * Emoji and other surrogate-pair chars are already removed by the whitelist.
+ */
+export function normalizeTitle(title: string, maxLength = 60): string {
+	return title
+		.replace(TITLE_ALLOWED_RE, '')
+		.replace(/\s+/g, ' ')
+		.trim()
+		.slice(0, maxLength)
+		.trim();
 }
