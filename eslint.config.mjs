@@ -181,11 +181,30 @@ export default [
 		},
 	},
 
-	// esbuild.config.mjs 允许 Node.js 模块
+	// esbuild.config.mjs 允许 Node.js 模块 / Allow Node.js modules in esbuild config
 	{
 		files: ["esbuild.config.mjs"],
 		rules: {
 			"import/no-nodejs-modules": "off",
+		},
+	},
+
+	// settings.ts 中的 'Share-to-Save' 是插件品牌名/默认文件夹名，不是自然语言句子
+	// 'Share-to-Save' in settings.ts is a plugin brand name / default folder name, not a natural language sentence
+	{
+		files: ["src/settings.ts"],
+		rules: {
+			"obsidianmd/ui/sentence-case": "off",
+		},
+	},
+
+	// 测试文件允许使用 any 类型以进行 mock / Test files allow any type for mocking purposes
+	{
+		files: ["tests/**/*.ts"],
+		rules: {
+			"@typescript-eslint/no-explicit-any": "off",
+			"@typescript-eslint/no-unsafe-call": "off",
+			"@typescript-eslint/no-unsafe-member-access": "off",
 		},
 	},
 ];

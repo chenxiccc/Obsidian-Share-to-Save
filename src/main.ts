@@ -2,11 +2,11 @@
  * Share to Save 插件主入口
  * Share to Save plugin main entry
  *
- * 手机端：接收分享 URL，写入 tobesave.json
- * 电脑端：监听 tobesave.json，下载内容并保存为 .md
+ * 手机端：接收分享 URL，写入 toBeSaved_*.json 队列文件
+ * 电脑端：轮询队列目录，下载内容并保存为 .md
  *
- * Mobile: receive shared URLs, write to tobesave.json
- * Desktop: watch tobesave.json, download content and save as .md
+ * Mobile: receive shared URLs, write toBeSaved_*.json queue files
+ * Desktop: poll queue directory, download content and save as .md
  */
 
 import { Plugin, Platform, Notice, getLanguage } from 'obsidian';

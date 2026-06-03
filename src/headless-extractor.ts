@@ -111,7 +111,7 @@ export class HeadlessExtractor {
 
 			// 6. 验证码检测 / Captcha detection
 			if (html && HeadlessExtractor.hasCaptcha(html)) {
-				console.warn('Share to Save: 检测到微信验证码页面 / Detected WeChat captcha page');
+				console.warn('Share to Save: 检测到验证码页面 / Detected captcha page');
 				return null;
 			}
 			return html;

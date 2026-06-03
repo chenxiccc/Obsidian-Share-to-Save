@@ -7,7 +7,7 @@
 
 import { Vault, normalizePath } from 'obsidian';
 import type { ParsedContent, ProcessResult, ShareToSaveSettings, Metadata } from './types';
-import { CHROME_UA, buildHeaders } from './http-utils';
+import { buildHeaders } from './http-utils';
 import { sanitizeFilename, computeEffectiveContent, normalizeTitle } from './text-utils';
 import { ImageHandler } from './image-handler';
 import type { Translator } from './i18n';
@@ -139,7 +139,7 @@ export class Downloader {
 
 	/**
 	 * 统一转换管线：HTML → DOMParser → Metadata → Converter → ParsedContent
-	 * Unified pipeline shared by Phase 1 and Phase 2. Pure computation, no side effects.
+	 * Unified pipeline. Pure computation, no side effects.
 	 */
 	private processDocToParsed(html: string, url: string): ParsedContent | null {
 		try {
@@ -372,14 +372,10 @@ export class Downloader {
 	// ── Obsidian Publish / Obsidian Publish ──────────────────────────────────
 
 	/**
-	 * 检测是否为 Obsidian Publish URL / Check if Obsidian Publish URL
-	 *
-	 * Obsidian Publish 返回 SPA 空壳，真实内容通过 window.preloadPage API 异步加载。
-	 * Obsidian Publish returns a SPA shell; real content loads via window.preloadPage API.
-	 */
-	/**
-	 * 从 SPA 壳 HTML 中提取 Obsidian Publish 的原始 Markdown API URL
-	 * Extract Obsidian Publish raw Markdown API URL from SPA shell HTML
+	 * 从 SPA 壳 HTML 中提取 Obsidian Publish 的原始 Markdown API URL。
+	 * SPA 空壳中 window.preloadPage 指向真实内容的 .md API。
+	 * Extract Obsidian Publish raw Markdown API URL from SPA shell HTML.
+	 * In the SPA shell, window.preloadPage points to the real content .md API.
 	 */
 	static extractObsidianPublishApiUrl(html: string): string | null {
 		const match = html.match(/window\.preloadPage=f\("([^"]+)"\)/);
@@ -525,7 +521,7 @@ export class Downloader {
 		// Escape extremely rare </script> in Markdown
 		const safeMd = resolvedMd.replace(/<\/script>/gi, '<\\/script>');
 
-		return `<!DOCTYPE html><html><head>${headContent}</head><body><script type="text/plain" id="publish-markdown">${safeMd}<\/script></body></html>`;
+		return `<!DOCTYPE html><html><head>${headContent}</head><body><script type="text/plain" id="publish-markdown">${safeMd}</script></body></html>`;
 	}
 
 	// ── 工具方法 / Utility Methods ──────────────────────────────────────────

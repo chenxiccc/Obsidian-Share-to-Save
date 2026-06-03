@@ -1,6 +1,6 @@
 /**
- * 文本工具函数：词数统计、内容质量评估、Obsidian 标签转义、Markdown 链接转义、文件名清理、标题规范化
- * Text utilities: word counting, content quality assessment, Obsidian tag escaping,
+ * 文本工具函数：有效内容计算、Obsidian 标签转义、Markdown 链接转义、文件名清理、标题规范化
+ * Text utilities: effective content computation, Obsidian tag escaping,
  * Markdown link escaping, filename sanitization, title normalization
  *
  * 所有函数均为纯字符串转换，零外部依赖。

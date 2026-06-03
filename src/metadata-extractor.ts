@@ -2,9 +2,9 @@
  * 页面元数据提取器：title/author/published
  * Page metadata extractor: title/author/published
  *
- * 替代 defuddle 的元数据提取，专注于本项目需要的 4 个字段。
+ * 替代 defuddle 的元数据提取，专注于本项目需要的 3 个字段。
  * 参考 defuddle/src/metadata.ts 的提取策略，简化为实际需要的部分。
- * Replaces defuddle's metadata extraction, focused on the 4 fields this project needs.
+ * Replaces defuddle's metadata extraction, focused on the 3 fields this project needs.
  * Based on defuddle/src/metadata.ts extraction strategy, simplified to what's actually used.
  */
 

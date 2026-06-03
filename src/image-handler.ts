@@ -7,7 +7,7 @@
  */
 
 import { Vault, normalizePath } from 'obsidian';
-import { CHROME_UA, buildHeaders } from './http-utils';
+import { buildHeaders } from './http-utils';
 import { sanitizeFilename as sanitizeForFs } from './text-utils';
 
 /** 匹配 Markdown 图片语法 / Match Markdown image syntax */
