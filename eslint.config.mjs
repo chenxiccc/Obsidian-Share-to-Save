@@ -189,6 +189,18 @@ export default [
 		},
 	},
 
+	// scripts/ 中的 CJS 脚本允许 require / CJS scripts in scripts/ allow require
+	{
+		files: ["scripts/**/*.cjs"],
+		rules: {
+			"@typescript-eslint/no-require-imports": "off",
+			"import/no-nodejs-modules": "off",
+		},
+		languageOptions: {
+			globals: globals.node,
+		},
+	},
+
 	// settings.ts 中的 'Share-to-Save' 是插件品牌名/默认文件夹名，不是自然语言句子
 	// 'Share-to-Save' in settings.ts is a plugin brand name / default folder name, not a natural language sentence
 	{
