@@ -214,6 +214,34 @@ export class ImageHandler {
 	}
 
 	/**
+	 * 并发控制工具：最多 limit 个并发执行异步任务，单个失败不影响其他
+	 * Concurrency limiter: execute async tasks with max `limit` concurrency; single failure doesn't abort others
+	 */
+	private async withConcurrencyLimit<T, R>(
+		items: T[],
+		limit: number,
+		fn: (item: T) => Promise<R>,
+	): Promise<(R | null)[]> {
+		const results = new Array<R | null>(items.length);
+		let index = 0;
+
+		const worker = async (): Promise<void> => {
+			while (index < items.length) {
+				const i = index++;
+				try {
+					results[i] = await fn(items[i]!);
+				} catch {
+					results[i] = null;
+				}
+			}
+		};
+
+		const workerCount = Math.min(limit, items.length);
+		await Promise.all(Array.from({ length: workerCount }, () => worker()));
+		return results;
+	}
+
+	/**
 	 * 处理正则匹配到的所有链接 / Process all links matched by regex
 	 */
 	private async processMatches(
@@ -236,23 +264,39 @@ export class ImageHandler {
 			matches.push({ full, alt, url });
 		}
 
-		// 逐图下载并替换 / Download and replace one by one
-		for (const { full, url } of matches) {
+		// Phase 1: 并发下载（最多 3 并发，15s 超时 + 1 次重试）
+		// Phase 1: concurrent download (max 3 concurrent, 15s timeout + 1 retry)
+		type DownloadResult = { full: string; url: string; buffer: Buffer } | { full: string; url: string; buffer: null };
+		// 回调内所有路径都 catch，不会抛异常，null 情况不会发生 / Callback catches all errors, null case impossible
+		const downloadResults = await this.withConcurrencyLimit(matches, 3, async (m) => {
 			// 非图片链接仅处理可识别文件扩展名的 URL，网页链接保持原样
 			// Non-image links: only process URLs with recognizable file extensions; web links stay as-is
 			const isImageRegex = regex.source === IMG_URL_REGEX.source;
-			if (!isImageRegex && !guessFileExtension(url)) continue;
+			if (!isImageRegex && !guessFileExtension(m.url)) {
+				return { full: m.full, url: m.url, buffer: null };
+			}
 			try {
-				const filename = buildStableFilename(url, {
-					titleBase: noteTitle,
-					fallbackName: 'image',
-					fallbackExt: '.png',
-				});
+				const buffer = await this.downloadWithRetry(m.url, sourceUrl);
+				return { full: m.full, url: m.url, buffer };
+			} catch (err) {
+				console.warn(`Share to Save: 附件下载失败 / Attachment download failed: ${m.url}`, err);
+				return { full: m.full, url: m.url, buffer: null };
+			}
+		}) as DownloadResult[];
 
-				const localPath = `${this.attachmentsDir}/${filename}`;
+		// Phase 2: 顺序应用（去重 + 保存 + 替换，必须顺序执行保证 dedup 和 markdown 替换正确）
+		// Phase 2: sequential apply (dedup + save + replace, must be sequential for correct dedup and string replacement)
+		for (const result of downloadResults) {
+			if (!result.buffer) continue;
+			const { full, url, buffer } = result;
 
-			// 下载图片 / Download image
-			const buffer = await this.nodeHttpsGetBuffer(url, sourceUrl);
+			const filename = buildStableFilename(url, {
+				titleBase: noteTitle,
+				fallbackName: 'image',
+				fallbackExt: '.png',
+			});
+
+			const localPath = `${this.attachmentsDir}/${filename}`;
 
 			// 内容哈希去重：同一次批处理中相同内容复用第一个 wikilink
 			// Content hash dedup: same content within a batch reuses first wikilink
@@ -282,10 +326,6 @@ export class ImageHandler {
 
 			// 替换原 URL 为 wikilink / Replace original URL with wikilink
 			markdown = markdown.replace(full, wikilink);
-			} catch (err) {
-				// 单张图片下载失败不影响整体 / Single image failure doesn't abort the whole process
-				console.warn(`Share to Save: 附件下载失败 / Attachment download failed: ${url}`, err);
-			}
 		}
 
 		return markdown;
@@ -338,13 +378,29 @@ export class ImageHandler {
 					res.on('error', reject);
 				});
 				req.on('error', reject);
-				req.setTimeout(60_000, () => {
+				req.setTimeout(15_000, () => {
 					req.destroy();
 					reject(new Error('下载超时 / Download timeout'));
 				});
 			};
 			doRequest(url);
 		});
+	}
+
+	/**
+	 * 带重试的图片下载：15s 超时 + 1 次重试 + 1s 退避
+	 * Image download with retry: 15s timeout + 1 retry + 1s backoff
+	 */
+	private async downloadWithRetry(url: string, sourceUrl?: string): Promise<Buffer> {
+		for (let attempt = 0; attempt <= 1; attempt++) {
+			try {
+				return await this.nodeHttpsGetBuffer(url, sourceUrl);
+			} catch (err) {
+				if (attempt === 1) throw err;
+				await new Promise(r => setTimeout(r, 1_000));
+			}
+		}
+		throw new Error('unreachable');
 	}
 
 	/**
