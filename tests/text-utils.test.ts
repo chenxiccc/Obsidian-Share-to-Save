@@ -101,4 +101,17 @@ describe('sanitizeFilename', () => {
 	it('collapses whitespace', () => {
 		expect(sanitizeFilename('hello   world')).toBe('hello world');
 	});
+
+	it('strips leading/trailing dots and spaces', () => {
+		expect(sanitizeFilename('...hidden')).toBe('hidden');
+		expect(sanitizeFilename('trailing...')).toBe('trailing');
+		expect(sanitizeFilename('  spaces  ')).toBe('spaces');
+		expect(sanitizeFilename('.dotfile')).toBe('dotfile');
+	});
+
+	it('fallback to untitled when all chars stripped', () => {
+		expect(sanitizeFilename('...')).toBe('untitled');
+		expect(sanitizeFilename('   ')).toBe('untitled');
+		expect(sanitizeFilename('')).toBe('untitled');
+	});
 });

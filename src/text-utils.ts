@@ -79,15 +79,21 @@ export function escapeLinkDestination(destination: string): string {
 const FILENAME_ILLEGAL_RE = /[/\\:*?"<>|#^[\]]/g;
 
 /**
- * 清理字符串为安全的文件名。替换非法字符为 _，合并空白，可选截断。
+ * 清理字符串为安全的文件名。替换非法字符为 _，合并空白，去首尾点号/空格，可选截断。
  * Sanitize a string for use as a filename. Replaces illegal chars with _,
- * collapses whitespace, optionally truncates.
+ * collapses whitespace, strips leading/trailing dots/spaces, optionally truncates.
+ *
+ * Windows 不允许文件名以点号或空格结尾，此函数确保跨平台兼容。
+ * Windows does not allow filenames ending with dots or spaces; this ensures cross-platform compatibility.
  */
 export function sanitizeFilename(name: string, maxLength?: number): string {
 	let result = name
 		.replace(FILENAME_ILLEGAL_RE, '_')
 		.replace(/\s+/g, ' ')
 		.trim();
+	// 去除首尾点号和空格（Windows 兼容）/ Strip leading/trailing dots and spaces (Windows compat)
+	result = result.replace(/^[.\s]+/, '').replace(/[.\s]+$/, '');
+	if (!result) result = 'untitled';
 	if (maxLength !== undefined && result.length > maxLength) {
 		result = result.slice(0, maxLength);
 	}
