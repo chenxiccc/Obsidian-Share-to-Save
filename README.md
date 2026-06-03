@@ -1,4 +1,4 @@
-[中文说明](#share-to-save中文说明)
+[中文说明](#zh)
 
 # Share to Save
 
@@ -65,7 +65,7 @@ MIT
 
 ---
 
-`<a id="share-to-save中文说明"></a>`
+<a id="zh"></a>
 
 # Share to Save（中文）
 

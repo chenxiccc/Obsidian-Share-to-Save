@@ -6,5 +6,5 @@ main.js.map
 *.log
 CLAUDE*.md
 docs/
-tests/fixtures/html/
+tests/
 docs
