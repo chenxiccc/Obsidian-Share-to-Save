@@ -133,9 +133,49 @@ export class HeadlessExtractor {
 
 	// ── 验证码检测 / Captcha Detection ──────────────────────────────────────
 
+	/**
+	 * 多信号验证码检测：服务签名 → 页面标题 → 关键词，按可靠性降序排列。
+	 * Multi-signal captcha detection: service signatures → page title → keywords, ordered by reliability.
+	 *
+	 * 服务签名：各验证码厂商注入的唯一 DOM 标记，误报率为零。
+	 * 页面标题：验证码页面标题高度固定，正常文章不会匹配。
+	 * 关键词：覆盖中英文常见验证码提示语，作为最终安全网。
+	 *
+	 * Service signatures: unique DOM markers injected by captcha vendors, zero false positives.
+	 * Page title: captcha page titles are highly formulaic, legitimate articles won't match.
+	 * Keywords: cover common CN/EN captcha prompts, as final safety net.
+	 */
 	static hasCaptcha(html: string): boolean {
-		const indicators = ['js_verify', 'verify_container', '环境异常', '请完成安全验证', '操作频繁'];
-		return indicators.some(ind => html.includes(ind));
+		// Signal 1: 已知验证码服务签名（语言无关，零误报）
+		// Signal 1: Known captcha service signatures (language-independent, zero false positives)
+		const serviceSignatures = [
+			'cf-browser-verification',   // Cloudflare
+			'cf-challenge-running',      // Cloudflare
+			'datadome',                   // DataDome
+			'akamai-bot-manager',        // Akamai
+			'_abck',                      // Akamai cookie
+		];
+		if (serviceSignatures.some(s => html.includes(s))) return true;
+
+		// Signal 2: 页面标题检测（公式化表达，误报风险极低）
+		// Signal 2: Page title detection (formulaic expressions, very low false positive risk)
+		const titleMatch = html.match(/<title[^>]*>([^<]*)<\/title>/i);
+		const title = titleMatch?.[1]?.trim() || '';
+		const captchaTitles = [
+			'just a moment', 'attention required', 'security check',
+			'verify you are a human', 'are you a robot',
+			'请完成安全验证', '环境异常', '人机验证',
+		];
+		if (captchaTitles.some(t => title.toLowerCase().includes(t))) return true;
+
+		// Signal 3: 关键词匹配（中英文覆盖，作为最终安全网）
+		// Signal 3: Keyword matching (CN/EN coverage, as final safety net)
+		const keywords = [
+			'js_verify', 'verify_container',
+			'环境异常', '请完成安全验证', '操作频繁',
+			'please verify you are a human', 'unusual traffic',
+		];
+		return keywords.some(k => html.includes(k));
 	}
 
 	// ── 网络监听器 / Network Listeners ──────────────────────────────────────
