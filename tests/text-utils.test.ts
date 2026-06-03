@@ -1,10 +1,10 @@
 /**
  * text-utils.ts 测试 / Tests for text-utils.ts
  *
- * Covers: computeEffectiveContent, escapeObsidianTags, escapeLinkDestination, sanitizeFilename
+ * Covers: computeEffectiveContent, escapeObsidianTags, escapeLinkDestination, sanitizeFilename, validateFolderPath
  */
 import { describe, it, expect } from 'vitest';
-import { computeEffectiveContent, escapeObsidianTags, escapeLinkDestination, sanitizeFilename } from '../src/text-utils';
+import { computeEffectiveContent, escapeObsidianTags, escapeLinkDestination, sanitizeFilename, validateFolderPath } from '../src/text-utils';
 
 // ============================================================================
 // computeEffectiveContent
@@ -113,5 +113,46 @@ describe('sanitizeFilename', () => {
 		expect(sanitizeFilename('...')).toBe('untitled');
 		expect(sanitizeFilename('   ')).toBe('untitled');
 		expect(sanitizeFilename('')).toBe('untitled');
+	});
+});
+
+// ============================================================================
+// validateFolderPath
+// ============================================================================
+
+describe('validateFolderPath', () => {
+	it('returns null for valid paths', () => {
+		expect(validateFolderPath('Share-to-Save')).toBeNull();
+		expect(validateFolderPath('My Folder')).toBeNull();
+		expect(validateFolderPath('sub/dir')).toBeNull();
+		expect(validateFolderPath('a.b.c')).toBeNull();
+	});
+
+	it('detects empty', () => {
+		expect(validateFolderPath('')).toBe('settings.folder.empty');
+		expect(validateFolderPath('   ')).toBe('settings.folder.empty');
+	});
+
+	it('detects illegal characters', () => {
+		expect(validateFolderPath('folder:name')).toBe('settings.folder.illegalChars');
+		expect(validateFolderPath('a*b')).toBe('settings.folder.illegalChars');
+		expect(validateFolderPath('test?')).toBe('settings.folder.illegalChars');
+	});
+
+	it('detects consecutive slashes', () => {
+		expect(validateFolderPath('a//b')).toBe('settings.folder.consecutiveSlashes');
+	});
+
+	// Note: leading/trailing spaces are already removed by trim(), so only
+	// dots and slashes are tested here
+	it('detects leading/trailing dots and slashes', () => {
+		expect(validateFolderPath('/leading')).toBe('settings.folder.leadingTrailing');
+		expect(validateFolderPath('trailing/')).toBe('settings.folder.leadingTrailing');
+		expect(validateFolderPath('.hidden')).toBe('settings.folder.leadingTrailing');
+		expect(validateFolderPath('trailing.')).toBe('settings.folder.leadingTrailing');
+	});
+
+	it('detects empty segments', () => {
+		expect(validateFolderPath('a/ /b')).toBe('settings.folder.emptySegment');
 	});
 });

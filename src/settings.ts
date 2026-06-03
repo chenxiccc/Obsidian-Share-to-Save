@@ -2,10 +2,11 @@
  * 插件设置 / Plugin settings
  */
 
-import { PluginSettingTab, Setting, App } from 'obsidian';
+import { PluginSettingTab, Setting, App, Notice } from 'obsidian';
 import type ShareToSavePlugin from './main';
 import type { ShareToSaveSettings, PollIntervalUnit } from './types';
 import type { Translator } from './i18n';
+import { validateFolderPath } from './text-utils';
 
 /** 默认设置 / Default settings */
 export const DEFAULT_SETTINGS: ShareToSaveSettings = {
@@ -63,11 +64,14 @@ export class ShareToSaveSettingTab extends PluginSettingTab {
 					.setPlaceholder('Share-to-Save')
 					.setValue(this.plugin.settings.outputFolder)
 					.onChange(async (value) => {
-						const trimmed = value.trim();
-						if (trimmed) {
-							this.plugin.settings.outputFolder = trimmed;
-							await this.plugin.saveSettings();
+						const errorKey = validateFolderPath(value);
+						if (errorKey) {
+							new Notice(this.t(errorKey));
+							return;
 						}
+						const trimmed = value.trim();
+						this.plugin.settings.outputFolder = trimmed;
+						await this.plugin.saveSettings();
 					})
 			);
 

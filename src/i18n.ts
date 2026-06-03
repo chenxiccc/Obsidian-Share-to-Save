@@ -48,6 +48,26 @@ export const STRINGS: Record<string, { zh: string; en: string }> = {
 		zh: '链接内容将保存到此文件夹下',
 		en: 'Saved content will be placed in this folder',
 	},
+	'settings.folder.empty': {
+		zh: '文件夹名不能为空',
+		en: 'Folder name cannot be empty',
+	},
+	'settings.folder.illegalChars': {
+		zh: '文件夹名含非法字符，仅允许字母、数字、空格、-、_、.、/',
+		en: 'Folder name contains illegal characters. Only letters, numbers, spaces, -, _, ., / are allowed',
+	},
+	'settings.folder.consecutiveSlashes': {
+		zh: '文件夹名不允许连续斜杠 //',
+		en: 'Consecutive slashes // are not allowed in folder name',
+	},
+	'settings.folder.leadingTrailing': {
+		zh: '文件夹名首尾不允许斜杠、点号或空格',
+		en: 'Folder name cannot start or end with slash, dot, or space',
+	},
+	'settings.folder.emptySegment': {
+		zh: '文件夹名每段路径不能为空',
+		en: 'Each path segment in folder name cannot be empty',
+	},
 	'settings.usage.heading': {
 		zh: '使用说明',
 		en: 'Usage Instructions',

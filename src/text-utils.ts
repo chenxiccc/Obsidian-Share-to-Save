@@ -102,6 +102,43 @@ export function sanitizeFilename(name: string, maxLength?: number): string {
 
 // ─── 标题规范化 / Title Normalization ──────────────────────────────────────
 
+// ─── 文件夹路径验证 / Folder Path Validation ───────────────────────────────
+
+/** 文件夹路径允许的字符白名单 / Allowed character whitelist for folder paths */
+const FOLDER_PATH_ALLOWED_RE = /[^\p{L}\p{N}\s._/-]/u;
+
+/**
+ * 验证文件夹路径是否安全。返回 null 表示合法，否则返回错误消息 key。
+ * Validate folder path safety. Returns null if valid, otherwise error message key.
+ *
+ * 规则 / Rules:
+ *   - 非空 / non-empty
+ *   - 仅允许 Unicode 字母、数字、空格、-、_、.、/ / only Unicode letters, numbers, space, -, _, ., /
+ *   - 不允许连续斜杠 / no consecutive slashes
+ *   - 不允许首尾斜杠、点号、空格 / no leading/trailing slash, dot, or space
+ *   - 每段路径非空 / each segment non-empty
+ */
+export function validateFolderPath(value: string): string | null {
+	const trimmed = value.trim();
+	if (!trimmed) return 'settings.folder.empty';
+
+	// 白名单检测 / Whitelist check
+	if (FOLDER_PATH_ALLOWED_RE.test(trimmed)) return 'settings.folder.illegalChars';
+
+	// 连续斜杠 / Consecutive slashes
+	if (trimmed.includes('//')) return 'settings.folder.consecutiveSlashes';
+
+	// 首尾字符 / Leading/trailing characters
+	if (/^[.\s/]/.test(trimmed) || /[.\s/]$/.test(trimmed)) {
+		return 'settings.folder.leadingTrailing';
+	}
+
+	// 每段非空 / Each segment non-empty
+	if (trimmed.split('/').some(seg => !seg.trim())) return 'settings.folder.emptySegment';
+
+	return null;
+}
+
 /**
  * 白名单：Unicode 字母 + 数字 + 空格 + 少量标点。其余字符全部移除。
  * Whitelist: Unicode letters + numbers + space + limited punctuation. All else removed.
