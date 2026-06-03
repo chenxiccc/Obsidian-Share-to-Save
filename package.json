@@ -7,7 +7,7 @@
 	"scripts": {
 		"dev": "node esbuild.config.mjs",
 		"build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
-		"version": "node -e \"const p=require('./package.json');const m=require('./manifest.json');m.version=p.version;require('fs').writeFileSync('./manifest.json',JSON.stringify(m,null,'\\t')+'\\n')\"",
+		"version": "node scripts/sync-version.cjs",
 		"lint": "eslint .",
 		"test": "vitest run",
 		"test:watch": "vitest"
