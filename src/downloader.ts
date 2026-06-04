@@ -194,7 +194,7 @@ export class Downloader {
 		const safeTitle = Downloader.sanitizeNoteTitle(parsed.title || 'Untitled');
 
 		const frontmatter = Downloader.buildFrontmatter(parsed, inputUrl, stsId);
-		let mdContent = frontmatter + '\n' + parsed.content;
+		let mdContent = frontmatter + '\n' + parsed.content.trimStart();
 
 		mdContent = await this.imageHandler.processContent(mdContent, safeTitle, canonicalUrl);
 

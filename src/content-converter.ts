@@ -235,6 +235,34 @@ class WeChatConverter implements ContentConverter {
 			} catch { /* keep image if URL parse fails */ }
 		});
 
+		// 5. 合并微信列表项：<section>• </section><section>正文</section> → 单行 "• 正文"
+		//    Merge WeChat list items: inline marker <section> + content <section> → single element
+		//    微信编辑器使用 flexbox section 模拟列表，而非标准 <ul>/<li>。
+		//    Turndown 无法识别这种伪列表结构，会将 marker 和内容各转为独立段落。
+		//    WeChat editor uses flexbox sections to simulate lists instead of <ul>/<li>.
+		//    Turndown doesn't recognize this pseudo-list structure, producing separate paragraphs.
+		const MARKER_PATTERN = /^(?:[•●○]|\d+[.、])\s*$/;
+		clone.querySelectorAll('section').forEach(outerSection => {
+			const children = Array.from(outerSection.children);
+			if (children.length < 2) return;
+
+			const firstChild = children[0] as HTMLElement;
+			const markerText = (firstChild.textContent || '').trim();
+			if (!MARKER_PATTERN.test(markerText)) return;
+
+			// 将 marker 文本前置到第二个子元素内容开头
+			// Prepend marker text to the second child's content
+			const secondChild = children[1] as HTMLElement;
+			// 保留 secondChild 的内部结构（可能有 <strong>, <code> 等），只在前加文本节点
+			// Preserve secondChild's inner structure, just prepend a text node
+			const textNode = document.createTextNode(markerText + ' ');
+			secondChild.insertBefore(textNode, secondChild.firstChild);
+
+			// 移除空的 marker 元素
+			// Remove the now-empty marker element
+			firstChild.remove();
+		});
+
 		return `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>${clone.innerHTML}</body></html>`;
 	}
 
