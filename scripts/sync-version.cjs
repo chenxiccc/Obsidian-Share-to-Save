@@ -35,3 +35,14 @@ console.log(`  versions.json → ${newVersion}: ${minAppVersion}`);
 
 // 3. git add，确保被 npm version 的 commit 包含 / stage so npm version's commit includes them
 execSync('git add manifest.json versions.json', { cwd: root, stdio: 'ignore' });
+
+// 4. 删除 npm 创建的 v 前缀 tag，创建无前缀 tag（Obsidian 要求）
+//    Remove npm's v-prefixed tag, create unprefixed tag (Obsidian requirement)
+const vTag = `v${newVersion}`;
+try {
+	execSync(`git tag -d ${vTag}`, { cwd: root, stdio: 'ignore' });
+	execSync(`git tag ${newVersion}`, { cwd: root, stdio: 'ignore' });
+	console.log(`  git tag ${vTag} → ${newVersion}`);
+} catch {
+	// tag 已存在或创建失败时忽略 / Ignore if tag already exists or creation fails
+}
