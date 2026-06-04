@@ -45,8 +45,8 @@ export const STRINGS: Record<string, { zh: string; en: string }> = {
 		en: 'Output folder',
 	},
 	'settings.folder.desc': {
-		zh: '链接内容将保存到此文件夹下',
-		en: 'Saved content will be placed in this folder',
+		zh: '链接内容将保存到此文件夹下。如果要修改，需要电脑和手机的插件配置修改为相同文件夹名称',
+		en: 'Saved content will be placed in this folder. If you change it, update both desktop and mobile plugin settings to the same folder name',
 	},
 	'settings.folder.empty': {
 		zh: '文件夹名不能为空',
@@ -68,6 +68,10 @@ export const STRINGS: Record<string, { zh: string; en: string }> = {
 		zh: '文件夹名每段路径不能为空',
 		en: 'Each path segment in folder name cannot be empty',
 	},
+	'settings.title': {
+		zh: 'Share to Save 设置',
+		en: 'Share to Save Settings',
+	},
 	'settings.usage.heading': {
 		zh: '使用说明',
 		en: 'Usage Instructions',
@@ -77,11 +81,11 @@ export const STRINGS: Record<string, { zh: string; en: string }> = {
 		en: 'Use any sync method, recommends ${link}, to sync this folder between mobile and desktop. Both devices must use the same folder. Desktop will automatically extract content when new queue files are received.',
 	},
 	'settings.pollInterval.name': {
-		zh: '轮询间隔',
+		zh: '检测间隔',
 		en: 'Polling interval',
 	},
 	'settings.pollInterval.desc': {
-		zh: '电脑端检查队列目录中是否有新条目的间隔。建议 >= 5 秒。',
+		zh: '电脑端检测队列目录中是否有新条目的间隔。建议 >= 5 秒。',
 		en: 'How often desktop checks for new entries in the queue directory. Recommend >= 5 seconds.',
 	},
 	'settings.pollInterval.seconds': {

@@ -33,6 +33,11 @@ export class ShareToSaveSettingTab extends PluginSettingTab {
 		const { containerEl } = this;
 		containerEl.empty();
 
+		// ── 页面标题 / Page title ──
+		new Setting(containerEl)
+			.setName(this.t('settings.title'))
+			.setHeading();
+
 // ── 使用说明 / Usage Instructions ──
 		const usageBox = containerEl.createDiv({ cls: 'sts-usage-box' });
 
@@ -43,7 +48,7 @@ export class ShareToSaveSettingTab extends PluginSettingTab {
 		const descEl = usageBox.createDiv({ cls: 'setting-item-description' });
 		// 链接文本 / Link text
 		const linkText = 'Fast Note Sync';
-		const linkHref = 'https://github.com/haierkeys/obsidian-fast-note-sync/';
+		const linkHref = 'https://community.obsidian.md/plugins/fast-note-sync';
 		const content = this.t('settings.usage.content', { link: linkText });
 		const linkIdx = content.indexOf(linkText);
 		if (linkIdx >= 0) {

@@ -137,3 +137,16 @@
 	padding: 20px;
 	margin-bottom: 24px;
 }
+
+/* 覆盖 Obsidian 默认间距 / Override Obsidian default spacing */
+.sts-usage-box .setting-item {
+	border-top: none;
+	padding: 0;
+	margin-top: 0;
+}
+
+.sts-usage-box .setting-item.setting-item-heading {
+	padding-left: 0;
+	margin-top: 0;
+	margin-bottom: 4px;
+}
