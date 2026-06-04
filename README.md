@@ -2,7 +2,7 @@
 
 # Share to Save
 
-![User Flow](images/UserFlow.png)
+![User Flow](assets/UserFlow.png)
 
 An Obsidian plugin that automatically downloads shared web pages as Markdown notes.
 
@@ -69,7 +69,7 @@ MIT
 
 # Share to Save（中文）
 
-![用户流程图](images/UserFlow.png)
+![用户流程图](assets/UserFlow.png)
 
 Share to Save 是一款 Obsidian 插件，将分享的网页 URL 自动下载为 Markdown 笔记。
 

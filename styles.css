@@ -127,3 +127,13 @@
 	width: 100%;
 	max-width: 600px;
 }
+
+/* ── 设置页使用说明框 / Settings page usage box ── */
+
+.sts-usage-box {
+	background: var(--background-secondary);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-m, 8px);
+	padding: 20px;
+	margin-bottom: 24px;
+}
