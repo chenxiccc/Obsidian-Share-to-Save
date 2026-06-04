@@ -95,7 +95,7 @@ export class FileWatcher {
 			for (const entry of entries) {
 				// delete on start：处理前删除文件，防止重复处理
 				// delete on start: remove file before processing to prevent re-processing
-				await this.queueManager.removeEntry(entry.id);
+				await this.queueManager.removeEntry(entry.filePath);
 
 				try {
 					const result = await this.downloader.processUrl(entry.url, entry.id);

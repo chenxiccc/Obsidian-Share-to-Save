@@ -15,6 +15,12 @@ export interface QueueEntry {
 	createdAt: string;
 }
 
+/** 队列条目（含文件路径），由 getPendingEntries 返回 / Queue entry with file path, returned by getPendingEntries */
+export interface QueueEntryWithPath extends QueueEntry {
+	/** 队列文件在 vault 中的完整路径 / Full path of queue file in vault */
+	filePath: string;
+}
+
 /** 页面元数据（title/author/published）/ Page metadata */
 export interface Metadata {
 	title: string;
