@@ -1,9 +1,11 @@
 /**
- * npm version 钩子：将 package.json 的版本同步到 manifest.json 和 versions.json
- * npm version hook: syncs version from package.json to manifest.json and versions.json
+ * npm version 钩子（version 阶段）：将 package.json 的版本同步到 manifest.json 和 versions.json
+ * npm version hook (version phase): sync version to manifest.json and versions.json
+ *
+ * 注意：tag 重命名由 postversion 钩子处理（此时 npm 已创建 v 前缀 tag）
+ * Note: tag rename is handled by postversion hook (npm has created the v-prefixed tag by then)
  *
  * 用法 / Usage: npm version <newversion> 会自动触发
- * 手动调用 / Manual: node scripts/sync-version.cjs
  */
 const fs = require('fs');
 const path = require('path');
@@ -35,14 +37,3 @@ console.log(`  versions.json → ${newVersion}: ${minAppVersion}`);
 
 // 3. git add，确保被 npm version 的 commit 包含 / stage so npm version's commit includes them
 execSync('git add manifest.json versions.json', { cwd: root, stdio: 'ignore' });
-
-// 4. 删除 npm 创建的 v 前缀 tag，创建无前缀 tag（Obsidian 要求）
-//    Remove npm's v-prefixed tag, create unprefixed tag (Obsidian requirement)
-const vTag = `v${newVersion}`;
-try {
-	execSync(`git tag -d ${vTag}`, { cwd: root, stdio: 'ignore' });
-	execSync(`git tag ${newVersion}`, { cwd: root, stdio: 'ignore' });
-	console.log(`  git tag ${vTag} → ${newVersion}`);
-} catch {
-	// tag 已存在或创建失败时忽略 / Ignore if tag already exists or creation fails
-}
