@@ -36,7 +36,7 @@
 	},
 	"dependencies": {
 		"@joplin/turndown-plugin-gfm": "^1.0.67",
-		"defuddle": "github:chenxiccc/defuddle#0e5bf20",
+		"defuddle": "github:chenxiccc/defuddle#share-to-save",
 		"esbuild": "^0.28.0",
 		"obsidian": "latest",
 		"turndown": "^7.2.4"
