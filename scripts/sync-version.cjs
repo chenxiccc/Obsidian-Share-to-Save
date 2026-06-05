@@ -1,9 +1,9 @@
 /**
- * npm version 钩子（version 阶段）：将 package.json 的版本同步到 manifest.json 和 versions.json
- * npm version hook (version phase): sync version to manifest.json and versions.json
+ * npm version 钩子：将 package.json 的版本同步到 manifest.json 和 versions.json
+ * npm version hook: syncs version from package.json to manifest.json and versions.json
  *
- * 注意：tag 重命名由 postversion 钩子处理（此时 npm 已创建 v 前缀 tag）
- * Note: tag rename is handled by postversion hook (npm has created the v-prefixed tag by then)
+ * Release 由 manifest.json 推送到 main 自动触发，不依赖 git tag
+ * Release is triggered by manifest.json push to main, not dependent on git tags
  *
  * 用法 / Usage: npm version <newversion> 会自动触发
  */
