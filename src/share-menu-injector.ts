@@ -33,7 +33,7 @@ export class ShareMenuInjector {
 		this.observer = new MutationObserver((mutations) => {
 			for (const mutation of mutations) {
 				for (const node of Array.from(mutation.addedNodes)) {
-					if (node instanceof HTMLElement && node.matches('body > div.menu')) {
+					if (node.instanceOf(HTMLElement) && node.matches('body > div.menu')) {
 						if (this.isShareMenu(node)) {
 							this.injectButton(node);
 						}
@@ -42,7 +42,7 @@ export class ShareMenuInjector {
 			}
 		});
 
-		this.observer.observe(document.body, {
+		this.observer.observe(activeDocument.body, {
 			childList: true,
 			subtree: false, // 只监听 body 直接子级 / Only watch direct children of body
 		});
@@ -55,7 +55,7 @@ export class ShareMenuInjector {
 		this.observer?.disconnect();
 		this.observer = null;
 		// 清理所有已注入的按钮 / Clean up all injected buttons
-		document.querySelectorAll(`.${BUTTON_CLASS}`).forEach(el => el.remove());
+		activeDocument.querySelectorAll(`.${BUTTON_CLASS}`).forEach(el => el.remove());
 	}
 
 	/**
@@ -64,7 +64,7 @@ export class ShareMenuInjector {
 	 */
 	private isShareMenu(menu: HTMLElement): boolean {
 		return (
-			menu.parentElement === document.body &&
+			menu.parentElement === activeDocument.body &&
 			menu.querySelector('[data-section="title"]') !== null &&
 			menu.querySelector('[data-section="options"]') !== null &&
 			menu.querySelector('[data-section="danger"]') !== null
@@ -89,7 +89,7 @@ export class ShareMenuInjector {
 		const lastOptionItem = optionItems[optionItems.length - 1] as HTMLElement;
 
 		// 创建自定义按钮 / Create custom button
-		const customBtn = document.createElement('div');
+		const customBtn = activeDocument.createElement('div');
 		customBtn.className = `menu-item tappable ${BUTTON_CLASS}`;
 		customBtn.setAttribute('data-section', 'options');
 

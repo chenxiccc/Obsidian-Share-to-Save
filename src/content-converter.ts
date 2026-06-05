@@ -44,7 +44,7 @@ class WeChatConverter implements ContentConverter {
 		// Area 1: #js_content (standard article + image detail page text)
 		const jsContent = doc.getElementById('js_content');
 		if (jsContent && (jsContent.textContent?.trim().length || 0) > 0) {
-			const cleaned = this.buildCleanHtml(jsContent);
+			const cleaned = this.buildCleanHtml(jsContent, doc);
 			const md = this.getTurndown().turndown(cleaned);
 			if (md.trim()) parts.push(md);
 		}
@@ -53,7 +53,7 @@ class WeChatConverter implements ContentConverter {
 		// Area 2: .img_swiper_area (visible swiper for image share pages, outside #js_content, images at end)
 		const imgSwiperArea = doc.querySelector('.img_swiper_area');
 		if (imgSwiperArea && imgSwiperArea.querySelectorAll('img').length >= 2) {
-			const cleaned = this.buildCleanHtml(imgSwiperArea as HTMLElement);
+			const cleaned = this.buildCleanHtml(imgSwiperArea as HTMLElement, doc);
 			const md = this.getTurndown().turndown(cleaned);
 			if (md.trim()) parts.push(md);
 		}
@@ -62,7 +62,7 @@ class WeChatConverter implements ContentConverter {
 		if (parts.length === 0) {
 			const container = this.detectContainer(doc);
 			if (container) {
-				const md = this.getTurndown().turndown(this.buildCleanHtml(container));
+				const md = this.getTurndown().turndown(this.buildCleanHtml(container, doc));
 				if (md.trim()) parts.push(md);
 			}
 		}
@@ -133,7 +133,7 @@ class WeChatConverter implements ContentConverter {
 	}
 
 	/** 克隆容器、data-src→src（含 Swiper 父级提升）、移除微信 UI、图片去重 → 构建最小 HTML */
-	private buildCleanHtml(el: HTMLElement): string {
+	private buildCleanHtml(el: HTMLElement, doc: Document): string {
 		const clone = el.cloneNode(true) as HTMLElement;
 
 		// 1. <img data-src> → <img src> / Promote data-src on img elements
@@ -198,7 +198,7 @@ class WeChatConverter implements ContentConverter {
 				const lines = codeEls.map(c => c.textContent || '');
 				const lang = pre.getAttribute('data-lang') || '';
 				pre.innerHTML = '';
-				const newCode = document.createElement('code');
+				const newCode = doc.createElement('code');
 				if (lang) newCode.className = `language-${lang}`;
 				newCode.textContent = lines.join('\n');
 				pre.appendChild(newCode);
@@ -215,7 +215,7 @@ class WeChatConverter implements ContentConverter {
 			});
 			// d) <br> → 换行符 / <br> → newline
 			pre.querySelectorAll('br').forEach(br => {
-				br.replaceWith(document.createTextNode('\n'));
+				br.replaceWith(doc.createTextNode('\n'));
 			});
 		});
 		// 4. 图片去重：按 URL pathname 去重，消除 Swiper 循环复制图
@@ -255,7 +255,7 @@ class WeChatConverter implements ContentConverter {
 			const secondChild = children[1] as HTMLElement;
 			// 保留 secondChild 的内部结构（可能有 <strong>, <code> 等），只在前加文本节点
 			// Preserve secondChild's inner structure, just prepend a text node
-			const textNode = document.createTextNode(markerText + ' ');
+			const textNode = doc.createTextNode(markerText + ' ');
 			secondChild.insertBefore(textNode, secondChild.firstChild);
 
 			// 移除空的 marker 元素

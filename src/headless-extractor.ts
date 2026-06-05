@@ -66,7 +66,7 @@ export class HeadlessExtractor {
 	async extractRenderedHtml(url: string): Promise<string | null> {
 		let RemoteBrowserWindow: ElectronBrowserWindowConstructor | undefined;
 		try {
-			// eslint-disable-next-line @typescript-eslint/no-require-imports
+			// eslint-disable-next-line @typescript-eslint/no-require-imports -- Dynamic require for Node.js protocol module based on URL scheme
 			const electron = require('electron') as { remote: { BrowserWindow: ElectronBrowserWindowConstructor } };
 			RemoteBrowserWindow = electron.remote.BrowserWindow;
 		} catch {
@@ -382,7 +382,7 @@ export class HeadlessExtractor {
 		const contentState = { lastLen: 0, stableCount: 0 };
 
 		while (true) {
-			await new Promise(r => setTimeout(r, POLL_INTERVAL_MS));
+			await new Promise(r => window.setTimeout(r, POLL_INTERVAL_MS));
 
 			const elapsed = Date.now() - startTime;
 
@@ -399,7 +399,7 @@ export class HeadlessExtractor {
 			// 条件 2：DOM 稳定 + 内容稳定（网络可能长连接/WebSocket 永不空闲）
 			// Condition 2: DOM stable + content stable (network may never idle due to WebSocket)
 			if (domStable && contentStable) {
-				await new Promise(r => setTimeout(r, 2000));
+				await new Promise(r => window.setTimeout(r, 2000));
 				return;
 			}
 
@@ -419,19 +419,19 @@ export class HeadlessExtractor {
 	 */
 	private loadUrlWithTimeout(win: ElectronBrowserWindow, url: string): Promise<void> {
 		return new Promise<void>((resolve) => {
-			const timer = setTimeout(() => resolve(), LOAD_TIMEOUT_MS);
+			const timer = window.setTimeout(() => resolve(), LOAD_TIMEOUT_MS);
 			let finished = false;
 			const onFinish = () => {
 				if (finished) return;
 				finished = true;
-				clearTimeout(timer);
+				window.clearTimeout(timer);
 				resolve();
 			};
 			win.webContents.once('did-finish-load', onFinish);
 			win.webContents.once('did-fail-load', () => {
 				if (finished) return;
 				finished = true;
-				clearTimeout(timer);
+				window.clearTimeout(timer);
 				resolve();
 			});
 			void win.loadURL(url, {
@@ -457,11 +457,11 @@ export class HeadlessExtractor {
 			await win.webContents.executeJavaScript(
 				'window.scrollTo(0, document.body.scrollHeight)'
 			);
-			await new Promise(r => setTimeout(r, 800));
+			await new Promise(r => window.setTimeout(r, 800));
 			await win.webContents.executeJavaScript(
 				'window.scrollTo(0, 0)'
 			);
-			await new Promise(r => setTimeout(r, 500));
+			await new Promise(r => window.setTimeout(r, 500));
 		} catch {
 			/* 滚动失败不阻塞 / scroll failure doesn't block */
 		}

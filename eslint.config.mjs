@@ -124,6 +124,9 @@ const plugins = {
 const tsGlobals = {
 	...globals.browser,
 	...globals.node,
+	// Obsidian 全局变量 / Obsidian globals
+	activeDocument: "readonly",
+	activeWindow: "readonly",
 };
 
 export default [

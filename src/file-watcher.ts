@@ -13,7 +13,7 @@ import type { QueueManager } from './queue-manager';
 import type { Downloader } from './downloader';
 
 export class FileWatcher {
-	private timerId: ReturnType<typeof setTimeout> | null = null;
+	private timerId: number | null = null;
 	private isProcessing = false; // 防止并发处理 / Prevent concurrent processing
 	private currentIntervalMs: number;
 
@@ -42,7 +42,7 @@ export class FileWatcher {
 	 */
 	stop(): void {
 		if (this.timerId !== null) {
-			clearTimeout(this.timerId);
+			window.clearTimeout(this.timerId);
 			this.timerId = null;
 		}
 		this.debugLog('FileWatcher 已停止 / FileWatcher stopped');
@@ -59,7 +59,7 @@ export class FileWatcher {
 		}
 		// 取消当前定时器，处理后重新调度 / Cancel current timer, reschedule after processing
 		if (this.timerId !== null) {
-			clearTimeout(this.timerId);
+			window.clearTimeout(this.timerId);
 			this.timerId = null;
 		}
 		await this.check();
@@ -72,7 +72,7 @@ export class FileWatcher {
 	private scheduleNext(): void {
 		const interval = this.getPollIntervalMs();
 		this.currentIntervalMs = interval;
-		this.timerId = setTimeout(() => {
+		this.timerId = window.setTimeout(() => {
 			this.timerId = null;
 			void this.check().then(() => this.scheduleNext());
 		}, interval);

@@ -54,7 +54,7 @@ export class UrlInputModal extends Modal {
 		if (this.initialText) {
 			textareaEl.value = this.initialText;
 		}
-		setTimeout(() => textareaEl.focus(), 50);
+		window.setTimeout(() => textareaEl.focus(), 50);
 
 		// ── 错误提示 / Error hint ──
 		this.errorEl = contentEl.createDiv({ cls: 'sts-url-error' });

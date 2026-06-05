@@ -338,7 +338,7 @@ export class Downloader {
 		if (redirectCount >= MAX_REDIRECTS) return Promise.resolve(null);
 
 		const protocol = new URL(requestUrl).protocol === 'http:' ? 'http' : 'https';
-		// eslint-disable-next-line @typescript-eslint/no-require-imports
+		// eslint-disable-next-line @typescript-eslint/no-require-imports -- Dynamic require for Node.js protocol module based on URL scheme
 		const mod = require(protocol) as typeof import('https');
 
 		return new Promise<NodeFetchResult | null>((resolve) => {
@@ -354,7 +354,7 @@ export class Downloader {
 					console.warn(
 						`doNodeFetch retry ${retryCount + 1}/${MAX_RETRIES} after ${delay}ms: ${reason} — ${requestUrl}`,
 					);
-					setTimeout(() => {
+					window.setTimeout(() => {
 						void this.doNodeFetch(requestUrl, 0, referer, retryCount + 1).then(resolve);
 					}, delay);
 				} else {

@@ -356,7 +356,7 @@ export class ImageHandler {
 	private nodeHttpsGetBuffer(url: string, sourceUrl?: string): Promise<Buffer> {
 		// 根据协议动态选择模块，支持 HTTP 和 HTTPS / Select module by protocol, support both HTTP and HTTPS
 		const protocol = new URL(url).protocol === 'http:' ? 'http' : 'https';
-		// eslint-disable-next-line @typescript-eslint/no-require-imports
+		// eslint-disable-next-line @typescript-eslint/no-require-imports -- Dynamic require for Node.js protocol module based on URL scheme
 		const mod = require(protocol) as typeof import('https');
 
 		return new Promise<Buffer>((resolve, reject) => {
@@ -397,7 +397,7 @@ export class ImageHandler {
 				return await this.nodeHttpsGetBuffer(url, sourceUrl);
 			} catch (err) {
 				if (attempt === 1) throw err;
-				await new Promise(r => setTimeout(r, 1_000));
+				await new Promise(r => window.setTimeout(r, 1_000));
 			}
 		}
 		throw new Error('unreachable');
