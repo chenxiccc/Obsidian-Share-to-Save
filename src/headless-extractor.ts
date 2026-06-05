@@ -149,11 +149,18 @@ export class HeadlessExtractor {
 		// Signal 1: 已知验证码服务签名（语言无关，零误报）
 		// Signal 1: Known captcha service signatures (language-independent, zero false positives)
 		const serviceSignatures = [
-			'cf-browser-verification',   // Cloudflare
-			'cf-challenge-running',      // Cloudflare
-			'datadome',                   // DataDome
-			'akamai-bot-manager',        // Akamai
-			'_abck',                      // Akamai cookie
+			'cf-browser-verification',        // Cloudflare JS Challenge
+			'cf-challenge-running',           // Cloudflare
+			'challenges.cloudflare.com',      // Cloudflare Turnstile (ref: Scrapling)
+			'cf-turnstile',                   // Cloudflare Turnstile widget
+			'g-recaptcha',                    // Google reCAPTCHA (ref: Scrapling)
+			'recaptcha/api.js',               // Google reCAPTCHA API
+			'grecaptcha',                     // Google reCAPTCHA JS
+			'hcaptcha.com',                   // hCaptcha (ref: Scrapling)
+			'h-captcha',                      // hCaptcha
+			'datadome',                       // DataDome
+			'akamai-bot-manager',             // Akamai
+			'_abck',                          // Akamai cookie
 		];
 		if (serviceSignatures.some(s => html.includes(s))) return true;
 

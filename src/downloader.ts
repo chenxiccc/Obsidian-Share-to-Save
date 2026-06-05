@@ -320,9 +320,22 @@ export class Downloader {
 	}
 
 	/**
-	 * 递归获取 HTML，跟踪重定向 / Recursively fetch HTML, following redirects
+	 * 获取 HTML，支持重定向跟随与错误重试。
+	 * Fetch HTML with redirect following and error retry.
+	 *
+	 * 网络错误 / 超时 / 5xx / 429 → 最多重试 2 次（1s/2s 指数退避），参考 Scrapling。
+	 * Network error / timeout / 5xx / 429 → up to 2 retries (1s/2s backoff), ref: Scrapling.
+	 *
+	 * 4xx（非 429）不重试——客户端错误重试无意义。
+	 * 4xx (non-429) not retried — client errors won't resolve on retry.
 	 */
-	private static doNodeFetch(requestUrl: string, redirectCount: number, referer: string): Promise<NodeFetchResult | null> {
+	private static doNodeFetch(
+		requestUrl: string,
+		redirectCount: number,
+		referer: string,
+		retryCount = 0,
+	): Promise<NodeFetchResult | null> {
+		const MAX_RETRIES = 2;
 		if (redirectCount >= MAX_REDIRECTS) return Promise.resolve(null);
 
 		const protocol = new URL(requestUrl).protocol === 'http:' ? 'http' : 'https';
@@ -331,18 +344,55 @@ export class Downloader {
 
 		return new Promise<NodeFetchResult | null>((resolve) => {
 			const headers = buildHeaders(referer, 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8');
+
+			// 重试辅助函数，防重复触发 / Retry helper with dedup guard
+			let settled = false;
+			const retry = (reason: string) => {
+				if (settled) return;
+				settled = true;
+				if (retryCount < MAX_RETRIES) {
+					const delay = (retryCount + 1) * 1000;  // 指数退避 1s, 2s / exponential backoff
+					console.warn(
+						`doNodeFetch retry ${retryCount + 1}/${MAX_RETRIES} after ${delay}ms: ${reason} — ${requestUrl}`,
+					);
+					setTimeout(() => {
+						void this.doNodeFetch(requestUrl, 0, referer, retryCount + 1).then(resolve);
+					}, delay);
+				} else {
+					console.warn(`doNodeFetch exhausted retries (${MAX_RETRIES}): ${reason} — ${requestUrl}`);
+					resolve(null);
+				}
+			};
+
 			const req = mod.get(requestUrl, { headers }, (res: import('http').IncomingMessage) => {
 				// 处理重定向 / Handle redirect
 				if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
 					const redirectUrl = new URL(res.headers.location, requestUrl).toString();
 					res.resume();
-					void this.doNodeFetch(redirectUrl, redirectCount + 1, referer).then(resolve);
+					void this.doNodeFetch(redirectUrl, redirectCount + 1, referer, retryCount).then(resolve);
 					return;
 				}
 
-				// 非 200 → 失败 / Non-200 → failure
-				if (!res.statusCode || res.statusCode >= 400) {
+				const sc = res.statusCode || 0;
+
+				// 限流 — 可重试 / Rate limited — retryable (ref: Scrapling BLOCKED_CODES)
+				if (sc === 429) {
 					res.resume();
+					retry(`HTTP 429 Too Many Requests`);
+					return;
+				}
+
+				// 服务端错误 — 可重试 / Server error — retryable (ref: Scrapling BLOCKED_CODES)
+				if (sc >= 500) {
+					res.resume();
+					retry(`HTTP ${sc} Server Error`);
+					return;
+				}
+
+				// 客户端错误 — 不重试 / Client error — terminal (ref: Scrapling BLOCKED_CODES)
+				if (sc >= 400) {
+					res.resume();
+					console.warn(`doNodeFetch blocked: HTTP ${sc} — ${requestUrl}`);
 					resolve(null);
 					return;
 				}
@@ -355,13 +405,13 @@ export class Downloader {
 					const canonical = Downloader.extractCanonicalUrl(htmlText) || requestUrl;
 					resolve({ html: htmlText, canonicalUrl: canonical });
 				});
-				res.on('error', () => resolve(null));
+				res.on('error', () => retry('response stream error'));
 			});
 
-			req.on('error', () => resolve(null));
+			req.on('error', (err: Error) => retry(`network error: ${err.message}`));
 			req.setTimeout(REQUEST_TIMEOUT_MS, () => {
 				req.destroy();
-				resolve(null);
+				retry('timeout');
 			});
 		});
 	}
