@@ -288,6 +288,35 @@ export function normalizeBoldElements(doc: Document): void {
 	});
 }
 
+// ─── Markdown 链接规范化 / Markdown Link Normalization ─────────────────
+
+/**
+ * 规范化多行 Markdown 链接文本：折叠换行为空格，去除首尾空白。
+ * Normalize multiline Markdown link text: collapse newlines to spaces,
+ * trim leading/trailing whitespace.
+ *
+ * 当 defuddle 遇到 <a><div>text</div></a> 时（<div> 被 flattenWrapperElements 转为 <p>），
+ * Turndown 会产出 [\n\ntext\n\n](url)，Obsidian 无法渲染为超链接。
+ * 此函数将链接文本中的空白折叠为单行，正常链接不受影响（快速路径短路跳过）。
+ *
+ * When defuddle encounters <a><div>text</div></a> (<div>→<p> by
+ * flattenWrapperElements), Turndown produces [\n\ntext\n\n](url).
+ * This collapses whitespace in link text to a single line.
+ * Normal links are unaffected (fast-path skipped).
+ */
+function normalizeMultilineLinks(md: string): string {
+	// 快速路径：没有紧跟在 [ 之后的换行 → 不存在断裂链接 / no broken links
+	if (!/\[\s*\n/.test(md)) return md;
+
+	return md.replace(
+		/\[([^\]]*\n[^\]]*)\]\(([^)\n]+)\)/g,
+		(_full: string, text: string, url: string) => {
+			const cleaned = text.replace(/\s+/g, ' ').trim();
+			return `[${cleaned}](${url})`;
+		}
+	);
+}
+
 // ─── 管线聚合入口 / Pipeline Aggregation Entry Points ─────────────────────
 
 /**
@@ -323,8 +352,9 @@ export function normalizeDocument(doc: Document): void {
  * Safe for both Markdown content and metadata text fields (title, author).
  *
  * 当前步骤 / Current steps:
- *   1. restoreAngleBrackets — ANGLT/ANGGT → 行内代码 / &lt; &gt;
- *   2. Tab → 空格            — 防止 Obsidian 将缩进解释为代码块 / prevent code-block rendering
+ *   1. restoreAngleBrackets     — ANGLT/ANGGT → 行内代码 / &lt; &gt;
+ *   2. Tab → 空格                — 防止 Obsidian 将缩进解释为代码块 / prevent code-block rendering
+ *   3. normalizeMultilineLinks  — 折叠链接文本中的换行为空格 / collapse newlines in link text
  *
  * Tab 替换无需保护代码块：经过 Turndown 的 Converter 已自动清理 Tab，
  * 绕过 Turndown 的 Converter（XHS/OP）不生成代码块。
@@ -335,7 +365,8 @@ export function normalizeDocument(doc: Document): void {
  */
 export function postprocessContent(md: string): string {
 	md = restoreAngleBrackets(md);
-	md = md.replace(/\t/g, ' ');       // Tab → space / Obsidian code-block prevention
+	md = md.replace(/\t/g, ' ');        // Tab → space / Obsidian code-block prevention
+	md = normalizeMultilineLinks(md);    // collapse newlines in link text
 	return md;
 }
 
