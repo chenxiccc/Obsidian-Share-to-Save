@@ -8,7 +8,7 @@
 import { Vault, normalizePath } from 'obsidian';
 import type { ParsedContent, ProcessResult, ShareToSaveSettings, Metadata } from './types';
 import { buildHeaders } from './http-utils';
-import { sanitizeFilename, computeEffectiveContent, normalizeTitle } from './text-utils';
+import { sanitizeFilename, computeEffectiveContent, normalizeTitle, normalizeBoldElements } from './text-utils';
 import { ImageHandler } from './image-handler';
 import type { Translator } from './i18n';
 import { HeadlessExtractor } from './headless-extractor';
@@ -144,6 +144,7 @@ export class Downloader {
 	private processDocToParsed(html: string, url: string): ParsedContent | null {
 		try {
 			const doc = new DOMParser().parseFromString(html, 'text/html');
+			normalizeBoldElements(doc);
 			const metadata = MetadataExtractor.extract(doc, html);
 			const converter = findConverter(url);
 			const result = converter.convert(doc, url, html);

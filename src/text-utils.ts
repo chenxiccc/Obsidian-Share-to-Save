@@ -224,3 +224,42 @@ export function restoreAngleBrackets(markdown: string): string {
 
 	return markdown;
 }
+
+// ─── Bold 元素 DOM 规范化 / Bold Element DOM Normalization ────────────────
+
+/**
+ * 规范化 Document 中的加粗元素：扁平化嵌套 + 确保 bold 与后续内容之间有空格。
+ * Normalize bold elements in Document: flatten nesting + ensure space between bold and following content.
+ *
+ * 解决 Turndown 输出 **text**nextChar 导致 Obsidian Live Preview 无法识别关闭 ** 分隔符的问题。
+ * Fixes **text**nextChar in Turndown output causing Obsidian Live Preview to fail delimiter recognition.
+ *
+ * 原地修改 Document，各 converter 通过 cloneNode 或直接使用继承规范化结果。
+ * Modifies Document in place; converters inherit via cloneNode or direct use.
+ */
+export function normalizeBoldElements(doc: Document): void {
+	// a. 扁平化嵌套的 strong/b 标签 / Flatten nested strong/b tags
+	doc.querySelectorAll('strong strong, strong b, b strong, b b').forEach(el => {
+		const parent = el.parentNode;
+		if (!parent) return;
+		while (el.firstChild) parent.insertBefore(el.firstChild, el);
+		el.remove();
+	});
+	// b. 确保 bold 结束标签后有空格 / Ensure space after bold closing tag
+	doc.querySelectorAll('strong, b').forEach(el => {
+		const next = el.nextSibling;
+		if (!next) return;
+		// 文本节点：检查是否以非空白开头 / Text node: check if starts with non-whitespace
+		if (next.nodeType === 3) {
+			const text = next.textContent || '';
+			if (text && !/^\s/.test(text)) {
+				next.textContent = ' ' + text;
+			}
+			return;
+		}
+		// 元素节点：el.nextSibling === next 表示中间没有文本节点 / no text node between
+		if (next.nodeType === 1 && el.nextSibling === next) {
+			el.parentNode?.insertBefore(doc.createTextNode(' '), next);
+		}
+	});
+}
