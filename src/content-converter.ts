@@ -472,11 +472,8 @@ interface XhsInitialState {
 class XiaohongshuConverter implements ContentConverter {
 	readonly domainPattern = /(?:www\.)?xiaohongshu\.com/;
 
-	convert(doc: Document, url: string, rawHtml?: string): ConvertResult {
-		// 使用原始 HTML（DOMParser 序列化后 <script> 内容可能被修改）
-		// Use raw HTML (DOMParser serialization may modify <script> content)
-		const html = rawHtml || doc.documentElement.outerHTML || '';
-		const state = this.parseInitialState(html);
+	convert(doc: Document, url: string): ConvertResult {
+		const state = this.findInitialStateScript(doc);
 		if (!state) {
 			return { markdown: this.fallbackExtract(doc) };
 		}
@@ -556,17 +553,31 @@ class XiaohongshuConverter implements ContentConverter {
 	}
 
 	/**
-	 * 解析 window.__INITIAL_STATE__ JSON
-	 * Parse window.__INITIAL_STATE__ JSON
+	 * 从 Document 的 <script> 标签中提取 window.__INITIAL_STATE__ JSON
+	 * Extract window.__INITIAL_STATE__ JSON from Document's <script> tags
 	 *
 	 * 正则 + lastIndexOf("}") 截断，与 all-in-obs / xiaohongshu-importer / ob-Plugin 一致
 	 * Regex + lastIndexOf("}") truncation, identical to all-in-obs / xiaohongshu-importer / ob-Plugin
 	 */
-	private parseInitialState(html: string): XhsInitialState | null {
-		const match = html.match(/window\.__INITIAL_STATE__\s*=\s*([\s\S]*?)<\/script>/i);
-		if (!match?.[1]) return null;
+	private findInitialStateScript(doc: Document): XhsInitialState | null {
+		for (const script of Array.from(doc.querySelectorAll('script'))) {
+			const text = script.textContent || '';
+			if (!text.includes('window.__INITIAL_STATE__')) continue;
+			const match = text.match(/window\.__INITIAL_STATE__\s*=\s*([\s\S]*)$/);
+			if (!match?.[1]) continue;
+			const raw = match[1].trim();
+			const result = this.parseInitialStateJson(raw);
+			if (result) return result;
+		}
+		return null;
+	}
+
+	/**
+	 * 从 __INITIAL_STATE__ 赋值表达式右半部分解析 JSON 对象
+	 * Parse JSON object from __INITIAL_STATE__ assignment RHS
+	 */
+	private parseInitialStateJson(jsonStr: string): XhsInitialState | null {
 		try {
-			let jsonStr = match[1].trim();
 			// 去掉末尾分号 / Strip trailing semicolon
 			jsonStr = jsonStr.replace(/;\s*$/, '');
 			// 取最后一个 } 截断，去掉 JSON 后的多余 JS 代码

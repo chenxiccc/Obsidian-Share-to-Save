@@ -17,17 +17,13 @@ export class MetadataExtractor {
 	 * 从 Document 提取元数据
 	 * Extract metadata from Document
 	 */
-	/**
-	 * 从 Document 提取元数据，可选 rawHtml 用于从 <script> 中提取 create_time 等字段
-	 * Extract metadata from Document, optional rawHtml for extracting create_time from <script> tags
-	 */
-	static extract(doc: Document, rawHtml?: string): Metadata {
+	static extract(doc: Document): Metadata {
 		const schema = MetadataExtractor.parseSchemaOrg(doc);
 
 		return {
 			title: MetadataExtractor.extractTitle(doc, schema),
 			author: MetadataExtractor.extractAuthor(doc, schema),
-			published: MetadataExtractor.extractPublished(doc, schema, rawHtml),
+			published: MetadataExtractor.extractPublished(doc, schema),
 		};
 	}
 
@@ -127,7 +123,7 @@ export class MetadataExtractor {
 	 * 提取发布日期，优先级：article:published_time → schema datePublished → <time>
 	 * Extract published date, priority: article:published_time → schema datePublished → <time>
 	 */
-	private static extractPublished(doc: Document, schema: Record<string, unknown>, rawHtml?: string): string {
+	private static extractPublished(doc: Document, schema: Record<string, unknown>): string {
 		// Meta 标签 / Meta tags
 		const publishedMeta = MetadataExtractor.getMeta(doc, 'property', 'article:published_time')
 			|| MetadataExtractor.getMeta(doc, 'name', 'publishDate')
@@ -153,10 +149,8 @@ export class MetadataExtractor {
 		}
 
 		// 微信 <script> 内 create_time（10 位 Unix 时间戳）/ WeChat create_time in <script> (10-digit Unix timestamp)
-		if (rawHtml) {
-			const created = MetadataExtractor.extractCreateTime(rawHtml);
-			if (created) return created;
-		}
+		const created = MetadataExtractor.extractCreateTime(doc);
+		if (created) return created;
 
 		return '';
 	}
@@ -227,22 +221,25 @@ export class MetadataExtractor {
 	 *   create_time = JsDecode('1234567890')
 	 *   var create_time = '1234567890';
 	 */
-	private static extractCreateTime(html: string): string {
+	private static extractCreateTime(doc: Document): string {
 		// 匹配 create_time 的多种赋值格式 / Match various create_time assignment formats
 		const patterns = [
 			/create_time\s*[:=]\s*JsDecode\s*\(\s*['"](\d{10})['"]\s*\)/i,
 			/create_time\s*[:=]\s*['"](\d{10})['"]/i,
 			/var\s+create_time\s*=\s*['"](\d{10})['"]/i,
 		];
-		for (const re of patterns) {
-			const m = html.match(re);
-			if (m?.[1]) {
-				const ts = parseInt(m[1], 10);
-				if (ts > 0) {
-					// 转换为 ISO 8601 日期字符串（北京时间 UTC+8）
-					// Convert to ISO 8601 date string (Beijing time UTC+8)
-					const date = new Date(ts * 1000);
-					return date.toISOString().slice(0, 10);
+		for (const script of Array.from(doc.querySelectorAll('script'))) {
+			const text = script.textContent || '';
+			for (const re of patterns) {
+				const m = text.match(re);
+				if (m?.[1]) {
+					const ts = parseInt(m[1], 10);
+					if (ts > 0) {
+						// 转换为 ISO 8601 日期字符串（北京时间 UTC+8）
+						// Convert to ISO 8601 date string (Beijing time UTC+8)
+						const date = new Date(ts * 1000);
+						return date.toISOString().slice(0, 10);
+					}
 				}
 			}
 		}

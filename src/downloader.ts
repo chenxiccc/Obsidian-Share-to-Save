@@ -154,9 +154,9 @@ export class Downloader {
 			// DOM 规范化：所有 converter 共享
 			normalizeBoldElements(doc);
 
-			const metadata = MetadataExtractor.extract(doc, html);
+				const metadata = MetadataExtractor.extract(doc);
 			const converter = findConverter(url);
-			const result = converter.convert(doc, url, html);
+				const result = converter.convert(doc, url);
 			Downloader.applyMetadataPatch(metadata, result.metadataPatch);
 
 			// 后处理：恢复占位符（行内代码包裹 / 实体编码）
