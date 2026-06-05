@@ -46,8 +46,7 @@ export class ShareToSaveSettingTab extends PluginSettingTab {
 		const descEl = usageBox.createDiv({ cls: 'setting-item-description' });
 		// 链接文本 / Link text
 		const linkText = 'Fast Note Sync';
-		// eslint-disable-next-line obsidianmd/hardcoded-config-path -- URL to community plugin page, not a config path reference
-		const linkHref = 'https://community.obsidian.md/plugins/fast-note-sync';
+		const linkHref = 'https://github.com/haierkeys/obsidian-fast-note-sync';
 		const content = this.t('settings.usage.content', { link: linkText });
 		const linkIdx = content.indexOf(linkText);
 		if (linkIdx >= 0) {
