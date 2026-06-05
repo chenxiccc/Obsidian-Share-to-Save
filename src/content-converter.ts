@@ -10,7 +10,7 @@ import TurndownService from 'turndown';
 import { gfm } from '@joplin/turndown-plugin-gfm';
 import Defuddle from 'defuddle/full';
 import type { Metadata } from './types';
-import { escapeObsidianTags, escapeLinkDestination } from './text-utils';
+import { escapeObsidianTags, escapeLinkDestination, ANGLT, ANGGT } from './text-utils';
 
 // ─── 类型 / Types ──────────────────────────────────────────────────────────
 
@@ -679,8 +679,8 @@ class ZhihuConverter implements ContentConverter {
 				.replace(/<br\s*\/?>/gi, '\n')
 				.replace(/<[^>]+>/g, '')
 				// Pipeline protectAngleBrackets left ANGLT in text → restore for code
-				.replace(/ANGLT/g, '<')
-				.replace(/ANGGT/g, '>')
+				.replace(new RegExp(ANGLT, 'g'), '<')
+				.replace(new RegExp(ANGGT, 'g'), '>')
 				.replace(/&amp;/g, '&');
 
 			if (!this.isCodeLike(codeText)) return;

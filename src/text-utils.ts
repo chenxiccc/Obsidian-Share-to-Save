@@ -169,6 +169,12 @@ export function normalizeTitle(title: string, maxLength = 60): string {
 
 // ─── HTML 角度括号保护 / HTML Angle Bracket Protection ────────────────────
 
+/** 占位符常量 / Placeholder constants */
+export const ANGLT = 'ANGLT';
+export const ANGGT = 'ANGGT';
+/** 代码块保护占位符 / Code block protection sentinel */
+const ANGLT_BLOCK = 'ANGLT_CODEBLOCK_';
+
 /**
  * 预处理：将所有 &lt; &gt; 替换为占位符，防止 DOMParser 解码后 Turndown 输出原始 HTML 标签。
  * Pre-process: replace all &lt; &gt; with placeholders to prevent raw HTML tags in markdown output.
@@ -179,20 +185,26 @@ export function normalizeTitle(title: string, maxLength = 60): string {
  * Smart inline code conversion happens in restoreAngleBrackets post-processing.
  */
 export function protectAngleBrackets(html: string): string {
-	// 跳过 <code>、<pre>、<title> 内的 &lt;，这些元素内的 &lt; 由
-	// DOMParser 解码后 Turndown/Defuddle 能正确处理（代码上下文安全）。
-	// Skip &lt; inside <code>, <pre>, <title> — their content is safe in code context.
+	// 单遍替换：遇到 code/pre/title 块保持原样，其余 &lt;→ANGLT、&gt;→ANGGT
+	// Single-pass: preserve code/pre/title blocks, replace other &lt;/&gt; with placeholders
+	let blockIndex = 0;
 	const blocks: string[] = [];
-	html = html.replace(/<(code|pre|title)\b[^>]*>[\s\S]*?<\/\1>/gi, match => {
-		blocks.push(match);
-		return `\x00CODEBLOCK${blocks.length - 1}\x00`;
-	});
-
-	html = html.replace(/&lt;/g, 'ANGLT');
-	html = html.replace(/&gt;/g, 'ANGGT');
-
-	html = html.replace(/\x00CODEBLOCK(\d+)\x00/g, (_, idx) => blocks[parseInt(idx as string)] ?? '');
-	return html;
+	return html.replace(
+		/<(code|pre|title)\b[^>]*>[\s\S]*?<\/\1>|&lt;|&gt;/gi,
+		match => {
+			// code/pre/title 块 → 暂存并返回唯一占位符
+			if (match.startsWith('<')) {
+				blocks.push(match);
+				return `${ANGLT_BLOCK}${blockIndex++}`;
+			}
+			if (match === '&lt;') return ANGLT;
+			if (match === '&gt;') return ANGGT;
+			return match;
+		}
+	).replace(
+		new RegExp(`${ANGLT_BLOCK}(\\d+)`, 'g'),
+		(_, idx) => blocks[parseInt(idx as string)] ?? ''
+	);
 }
 
 /**
@@ -213,6 +225,9 @@ export function protectAngleBrackets(html: string): string {
  * Note: CODELT/CODEGT no longer needed — no second DOMParser round-trip.
  */
 export function restoreAngleBrackets(markdown: string): string {
+	// 快速短路：不含占位符时无需处理 / Fast path: skip if no placeholders
+	if (!markdown.includes(ANGLT) && !markdown.includes(ANGGT)) return markdown;
+
 	// 1. HTML 标签模式：ANGLT + 标签名 + 内容 + ANGGT → `<tag>`
 	// 匹配 ANGLT(标签名+属性)ANGGT，其中标签名必须以字母开头
 	markdown = markdown.replace(
