@@ -680,7 +680,7 @@ class ZhihuConverter implements ContentConverter {
 		doc.querySelectorAll('table[data-draft-type="table"]').forEach(table => {
 			// Only process single-cell <th> tables
 			const cells = Array.from(table.querySelectorAll('th, td'))
-				.filter(cell => (cell as Element).closest('table') === table);
+				.filter(cell => cell.closest('table') === table);
 			if (cells.length !== 1) return;
 
 			const cell = cells[0] as Element;
@@ -711,7 +711,7 @@ class ZhihuConverter implements ContentConverter {
 	 */
 	private isCodeLike(text: string): boolean {
 		return /^\s*(?:from\s+|import\s+|def\s+|class\s+|print\s*\(|#\s|if\s+|for\s+|while\s+|\w+\s*=\s*)/m.test(text)
-			|| (text.split('\n').length >= 3 && /[=\){}\[\]]/.test(text));
+			|| (text.split('\n').length >= 3 && /[=){}[\]]/.test(text));
 	}
 }
 

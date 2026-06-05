@@ -15,10 +15,8 @@ export const DEFAULT_SETTINGS: ShareToSaveSettings = {
 	pollIntervalUnit: 'seconds',
 };
 
-/** 用户流程图 / User flow diagram constants */
+/** 用户流程图远程 URL / User flow diagram remote URL */
 const IMAGE_REMOTE_URL = 'https://raw.githubusercontent.com/chenxiccc/Obsidian-Share-to-Save/main/assets/UserFlow.png';
-const IMAGE_LOCAL_PATH = '.obsidian/plugins/share-to-save/assets/UserFlow.png';
-const ASSETS_DIR = '.obsidian/plugins/share-to-save/assets/';
 
 export class ShareToSaveSettingTab extends PluginSettingTab {
 	constructor(
@@ -65,7 +63,7 @@ export class ShareToSaveSettingTab extends PluginSettingTab {
 			attr: { alt: 'User Flow' },
 		});
 		// 异步加载图片：优先本地，失败回退远程 / Load image async: local first, fallback remote
-		this.loadImage(img);
+		void this.loadImage(img);
 
 // ── 保存文件夹 / Output folder ──
 		new Setting(containerEl)
@@ -122,10 +120,13 @@ export class ShareToSaveSettingTab extends PluginSettingTab {
 	 */
 	private async loadImage(img: HTMLImageElement): Promise<void> {
 		const adapter = this.app.vault.adapter;
+		const configDir = this.app.vault.configDir;
+		const localPath = `${configDir}/plugins/share-to-save/assets/UserFlow.png`;
+		const assetsDir = `${configDir}/plugins/share-to-save/assets/`;
 
 		// 本地已存在 → 直接用 / Local exists → use directly
-		if (await adapter.exists(IMAGE_LOCAL_PATH)) {
-			img.src = adapter.getResourcePath(IMAGE_LOCAL_PATH);
+		if (await adapter.exists(localPath)) {
+			img.src = adapter.getResourcePath(localPath);
 			return;
 		}
 
@@ -134,11 +135,11 @@ export class ShareToSaveSettingTab extends PluginSettingTab {
 			const response = await requestUrl({ url: IMAGE_REMOTE_URL });
 			if (response.status === 200 && response.arrayBuffer) {
 				// 确保目录存在 / Ensure directory exists
-				if (!await adapter.exists(ASSETS_DIR)) {
-					await adapter.mkdir(ASSETS_DIR);
+				if (!await adapter.exists(assetsDir)) {
+					await adapter.mkdir(assetsDir);
 				}
-				await adapter.writeBinary(IMAGE_LOCAL_PATH, response.arrayBuffer);
-				img.src = adapter.getResourcePath(IMAGE_LOCAL_PATH);
+				await adapter.writeBinary(localPath, response.arrayBuffer);
+				img.src = adapter.getResourcePath(localPath);
 				return;
 			}
 		} catch {
