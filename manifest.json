@@ -1,7 +1,7 @@
 {
 	"id": "share-to-save",
 	"name": "Share to Save",
-	"version": "3.2.0",
+	"version": "3.2.1",
 	"minAppVersion": "1.7.0",
 	"description": "Save shared web content to your vault. Share URLs from mobile, download and save as Markdown notes on desktop.",
 	"author": "chenxiccc",
