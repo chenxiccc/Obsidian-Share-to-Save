@@ -287,3 +287,55 @@ export function normalizeBoldElements(doc: Document): void {
 		}
 	});
 }
+
+// ─── 管线聚合入口 / Pipeline Aggregation Entry Points ─────────────────────
+
+/**
+ * 管线预处理入口：所有 Converter 统一执行。
+ * Pipeline-only preprocess entry. Applied to all converters.
+ *
+ * 当前步骤 / Current steps:
+ *   1. protectAngleBrackets — &lt;/&gt; → ANGLT/ANGGT 占位符 / placeholders
+ *
+ * @pipeline-only — 仅供 Downloader.processDocToParsed 调用 / only called from pipeline
+ */
+export function preprocessHtml(html: string): string {
+	html = protectAngleBrackets(html);
+	return html;
+}
+
+/**
+ * 管线 DOM 规范化入口：所有 Converter 统一执行。
+ * Pipeline-only DOM normalize entry. Applied to all converters.
+ *
+ * 当前步骤 / Current steps:
+ *   1. normalizeBoldElements — 扁平化嵌套 strong/b，bold 后补空格 / flatten nesting + trailing space
+ *
+ * @pipeline-only — 仅供 Downloader.processDocToParsed 调用 / only called from pipeline
+ */
+export function normalizeDocument(doc: Document): void {
+	normalizeBoldElements(doc);
+}
+
+/**
+ * 管线后处理入口：所有 Converter 统一执行，适用于 Markdown 正文和 metadata 文本字段。
+ * Pipeline-only postprocess entry. Applied to all converters.
+ * Safe for both Markdown content and metadata text fields (title, author).
+ *
+ * 当前步骤 / Current steps:
+ *   1. restoreAngleBrackets — ANGLT/ANGGT → 行内代码 / &lt; &gt;
+ *   2. Tab → 空格            — 防止 Obsidian 将缩进解释为代码块 / prevent code-block rendering
+ *
+ * Tab 替换无需保护代码块：经过 Turndown 的 Converter 已自动清理 Tab，
+ * 绕过 Turndown 的 Converter（XHS/OP）不生成代码块。
+ * Code block protection not needed: Turndown-based converters auto-clean tabs;
+ * non-Turndown converters (XHS/OP) don't produce code blocks.
+ *
+ * @pipeline-only — 仅供 Downloader.processDocToParsed 调用 / only called from pipeline
+ */
+export function postprocessContent(md: string): string {
+	md = restoreAngleBrackets(md);
+	md = md.replace(/\t/g, ' ');       // Tab → space / Obsidian code-block prevention
+	return md;
+}
+

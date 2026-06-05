@@ -8,7 +8,7 @@
 import { Vault, normalizePath } from 'obsidian';
 import type { ParsedContent, ProcessResult, ShareToSaveSettings, Metadata } from './types';
 import { buildHeaders } from './http-utils';
-import { sanitizeFilename, computeEffectiveContent, normalizeTitle, normalizeBoldElements, protectAngleBrackets, restoreAngleBrackets } from './text-utils';
+import { sanitizeFilename, computeEffectiveContent, normalizeTitle, preprocessHtml, normalizeDocument, postprocessContent } from './text-utils';
 import { ImageHandler } from './image-handler';
 import type { Translator } from './i18n';
 import { HeadlessExtractor } from './headless-extractor';
@@ -147,25 +147,24 @@ export class Downloader {
 	private processDocToParsed(html: string, url: string): ParsedContent | null {
 		try {
 			// 预处理：替换 &lt;/&gt; 为占位符，防止 Turndown 输出原始 HTML 标签
-			html = protectAngleBrackets(html);
+			html = preprocessHtml(html);
 
 			const doc = new DOMParser().parseFromString(html, 'text/html');
 
 			// DOM 规范化：所有 converter 共享
-			normalizeBoldElements(doc);
+			normalizeDocument(doc);
 
-				const metadata = MetadataExtractor.extract(doc);
+			const metadata = MetadataExtractor.extract(doc);
 			const converter = findConverter(url);
-				const result = converter.convert(doc, url);
+			const result = converter.convert(doc, url);
 			Downloader.applyMetadataPatch(metadata, result.metadataPatch);
 
-			// 后处理：恢复占位符（行内代码包裹 / 实体编码）
-			let content = result.markdown;
-			content = restoreAngleBrackets(content);
+			// 后处理：恢复占位符 + 空白规范化（所有文本字段统一）
+			let content = postprocessContent(result.markdown);
 
-			// metadata 文本字段也过一遍，防止标题中的 ANGLT 未被还原
-			if (metadata.title) metadata.title = restoreAngleBrackets(metadata.title);
-			if (metadata.author) metadata.author = restoreAngleBrackets(metadata.author);
+			// metadata 文本字段统一走后处理入口（ANGLT 还原 + Tab 规范化）
+			if (metadata.title) metadata.title = postprocessContent(metadata.title);
+			if (metadata.author) metadata.author = postprocessContent(metadata.author);
 
 			const imageUrls = Downloader.extractImageUrls(content);
 			return { ...metadata, content, imageUrls };
