@@ -619,6 +619,137 @@ class ObsidianPublishConverter implements ContentConverter {
 	}
 }
 
+// ─── 知乎转换器 / Zhihu Converter ─────────────────────────────────────────────
+
+/**
+ * 知乎专栏页面转换器
+ * Zhihu zhuanlan article converter
+ *
+ * 预处理 rawHtml 修复三个问题：
+ * 1. 剥离 <a.RichContent-EntityWord> 实体链接（zhida.zhihu.com 关键词链接）
+ * 2. 保护 &lt; &gt; 防止 DOMParser 解码后 Turndown 输出原始 HTML 标签
+ * 3. 单格 <th> 代码表 → <pre><code>
+ * Three fixes via rawHtml preprocessing:
+ * 1. Strip entity links (zhida.zhihu.com keyword links)
+ * 2. Protect &lt; &gt; from being decoded and output as raw HTML tags
+ * 3. Convert single-cell <th> code tables to <pre><code>
+ */
+class ZhihuConverter implements ContentConverter {
+	readonly domainPattern = /zhuanlan\.zhihu\.com/;
+
+	convert(_doc: Document, url: string, rawHtml?: string): ConvertResult {
+		if (!rawHtml) {
+			// No rawHtml available, fall back to defuddle directly
+			return defuddleFallback.convert(_doc, url);
+		}
+
+		let html = rawHtml;
+
+		// Step 1: strip entity links (zhida keyword links with RichContent-EntityWord class)
+		html = this.stripEntityLinks(html);
+
+		// Step 2: protect angle brackets &lt; → ANGLT, &gt; → ANGGT
+		// DOMParser decodes HTML entities to literal chars; Turndown outputs them as
+		// raw HTML tags in markdown, which breaks the markdown parser state.
+		// Using plain-letter placeholders (no __ which would be bold in markdown).
+		html = this.protectAngleBrackets(html);
+
+		// Step 3: normalize single-cell <th> code tables to <pre><code>
+		// Zhihu wraps code blocks in single-cell <table date-draft-type="table"><th>
+		// instead of <pre><code>.
+		html = this.normalizeCodeBlocks(html);
+
+		// Re-parse with cleaned HTML
+		const doc = new DOMParser().parseFromString(html, 'text/html');
+
+		// Use Defuddle for full content extraction + markdown conversion
+		const result = new Defuddle(doc, { url, markdown: true, useAsync: false }).parse();
+		let markdown = result.content ?? '';
+
+		// Restore angle bracket placeholders
+		markdown = this.restoreAngleBrackets(markdown);
+
+		return { markdown };
+	}
+
+	/**
+	 * 剥离 <a class="...RichContent-EntityWord..."> 实体链接，保留纯文本
+	 * Strip zhida keyword entity links, keep plain text only (remove SVG icons)
+	 */
+	private stripEntityLinks(html: string): string {
+		// Match <a with class containing RichContent-EntityWord, capture inner content
+		return html.replace(/<a[^>]*class="[^"]*RichContent-EntityWord[^"]*"[^>]*>([\s\S]*?)<\/a>/g, (_match, inner: string) => {
+			// Remove all HTML tags from inner content (SVG, spans, etc.), keep only text
+			return inner.replace(/<[^>]+>/g, '');
+		});
+	}
+
+	/**
+	 * 保护编码角度括号 / Protect encoded angle brackets
+	 * &lt; → ANGLT, &gt; → ANGGT (plain letter placeholders, safe in markdown)
+	 */
+	private protectAngleBrackets(html: string): string {
+		return html
+			.replace(/&lt;/g, 'ANGLT')
+			.replace(/&gt;/g, 'ANGGT');
+	}
+
+	/**
+	 * 恢复角度括号占位符 / Restore angle bracket placeholders
+	 * ANGLT → &lt;, ANGGT → &gt;
+	 */
+	private restoreAngleBrackets(markdown: string): string {
+		return markdown
+			.replace(/ANGLT/g, '&lt;')
+			.replace(/ANGGT/g, '&gt;');
+	}
+
+	/**
+	 * 规范化代码块：单格 <th> 代码表 → <pre><code>
+	 * Normalize code blocks: single-cell <th> code table → <pre><code>
+	 *
+	 * Zhihu wraps code blocks in single-cell <table data-draft-type="table"><th>
+	 * with <br> line breaks (not <pre><code>). Detect by code-like content
+	 * and convert to standard <pre><code> format.
+	 */
+	private normalizeCodeBlocks(html: string): string {
+		// Match single-cell <th> tables with data-draft-type="table"
+		// Pattern: extract the <th> content for code detection
+		const TABLE_CODE_RE = /<table[^>]*data-draft-type\s*=\s*"table"[^>]*>[\s\S]*?<tbody>[\s\S]*?<tr>[\s\S]*?<th>([\s\S]*?)<\/th>[\s\S]*?<\/tr>[\s\S]*?<\/tbody>[\s\S]*?<\/table>/g;
+
+		return html.replace(TABLE_CODE_RE, (match, cellContent: string) => {
+			// Extract plain text from cell (strip HTML tags for detection)
+			const plainText = cellContent.replace(/<[^>]+>/g, '');
+
+			// Check if the content looks like code
+			// Heuristic: starts with code keywords (from, import, def, class, print, #, if, for, while, or assignment)
+			// or has multiple lines with code patterns
+			const isCode = /^\s*(?:from\s+|import\s+|def\s+|class\s+|print\s*\(|#\s|if\s+|for\s+|while\s+|\w+\s*=\s*)/m.test(plainText)
+				|| (plainText.split('\n').length >= 3 && /[=){}\[\]]/.test(plainText));
+
+			if (!isCode) {
+				return match; // Not code → leave intact
+			}
+
+			// Normalize: <br> → newline, strip HTML, wrap in <pre><code>
+			const codeText = cellContent
+				.replace(/<br\s*\/?>/gi, '\n')     // <br> → newline
+				.replace(/<[^>]+>/g, '')             // Strip all HTML tags
+				.replace(/&lt;/g, '<')               // Decode &lt; in code (restored from ANGLT later)
+				.replace(/&gt;/g, '>')               // Decode &gt; in code
+				.replace(/&amp;/g, '&');              // Decode &amp; in code
+
+			// Preserve angle brackets in code by temporarily re-protecting them
+			// Use a different sentinel for code block content
+			const codeProtected = codeText
+				.replace(/</g, 'ANGLT')
+				.replace(/>/g, 'ANGGT');
+
+			return `<pre><code>${codeProtected}</code></pre>`;
+		});
+	}
+}
+
 // ─── Defuddle 通用回退 / Defuddle Generic Fallback ───────────────────────────
 
 /**
@@ -640,6 +771,7 @@ const converters: ContentConverter[] = [
 	new WeChatConverter(),
 	new XiaohongshuConverter(),
 	new ObsidianPublishConverter(),
+	new ZhihuConverter(),
 ];
 
 /** Defuddle 通用回退，始终在注册表末尾作为兜底 / Defuddle generic fallback, always at end of registry */
