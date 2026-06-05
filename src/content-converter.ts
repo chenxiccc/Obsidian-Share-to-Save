@@ -10,7 +10,7 @@ import TurndownService from 'turndown';
 import { gfm } from '@joplin/turndown-plugin-gfm';
 import Defuddle from 'defuddle/full';
 import type { Metadata } from './types';
-import { escapeObsidianTags, escapeLinkDestination } from './text-utils';
+import { escapeObsidianTags, escapeLinkDestination, protectAngleBrackets, restoreAngleBrackets } from './text-utils';
 
 // ─── 类型 / Types ──────────────────────────────────────────────────────────
 
@@ -652,7 +652,7 @@ class ZhihuConverter implements ContentConverter {
 		// DOMParser decodes HTML entities to literal chars; Turndown outputs them as
 		// raw HTML tags in markdown, which breaks the markdown parser state.
 		// Using plain-letter placeholders (no __ which would be bold in markdown).
-		html = this.protectAngleBrackets(html);
+		html = protectAngleBrackets(html);
 
 		// Step 3: normalize single-cell <th> code tables to <pre><code>
 		// Zhihu wraps code blocks in single-cell <table date-draft-type="table"><th>
@@ -667,7 +667,7 @@ class ZhihuConverter implements ContentConverter {
 		let markdown = result.content ?? '';
 
 		// Restore angle bracket placeholders
-		markdown = this.restoreAngleBrackets(markdown);
+		markdown = restoreAngleBrackets(markdown);
 
 		return { markdown };
 	}
@@ -684,25 +684,9 @@ class ZhihuConverter implements ContentConverter {
 		});
 	}
 
-	/**
-	 * 保护编码角度括号 / Protect encoded angle brackets
-	 * &lt; → ANGLT, &gt; → ANGGT (plain letter placeholders, safe in markdown)
-	 */
-	private protectAngleBrackets(html: string): string {
-		return html
-			.replace(/&lt;/g, 'ANGLT')
-			.replace(/&gt;/g, 'ANGGT');
-	}
 
-	/**
-	 * 恢复角度括号占位符 / Restore angle bracket placeholders
-	 * ANGLT → &lt;, ANGGT → &gt;
-	 */
-	private restoreAngleBrackets(markdown: string): string {
-		return markdown
-			.replace(/ANGLT/g, '&lt;')
-			.replace(/ANGGT/g, '&gt;');
-	}
+
+
 
 	/**
 	 * 规范化代码块：单格 <th> 代码表 → <pre><code>
@@ -735,15 +719,16 @@ class ZhihuConverter implements ContentConverter {
 			const codeText = cellContent
 				.replace(/<br\s*\/?>/gi, '\n')     // <br> → newline
 				.replace(/<[^>]+>/g, '')             // Strip all HTML tags
-				.replace(/&lt;/g, '<')               // Decode &lt; in code (restored from ANGLT later)
-				.replace(/&gt;/g, '>')               // Decode &gt; in code
+				// ANGLT/ANGGT come from step 2 (standalone &lt;/&gt; that aren't tag patterns)
+				.replace(/ANGLT/g, '<')              // Restore < for code content
+				.replace(/ANGGT/g, '>')              // Restore > for code content
 				.replace(/&amp;/g, '&');              // Decode &amp; in code
 
 			// Preserve angle brackets in code by temporarily re-protecting them
 			// Use a different sentinel for code block content
 			const codeProtected = codeText
-				.replace(/</g, 'ANGLT')
-				.replace(/>/g, 'ANGGT');
+				.replace(/</g, 'CODELT')
+				.replace(/>/g, 'CODEGT');
 
 			return `<pre><code>${codeProtected}</code></pre>`;
 		});

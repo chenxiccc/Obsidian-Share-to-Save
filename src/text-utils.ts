@@ -166,3 +166,61 @@ export function normalizeTitle(title: string, maxLength = 60): string {
 		.slice(0, maxLength)
 		.trim();
 }
+
+// ─── HTML 角度括号保护 / HTML Angle Bracket Protection ────────────────────
+
+/**
+ * 预处理：将所有 &lt; &gt; 替换为占位符，防止 DOMParser 解码后 Turndown 输出原始 HTML 标签。
+ * Pre-process: replace all &lt; &gt; with placeholders to prevent raw HTML tags in markdown output.
+ *
+ * 不在此阶段做行内代码包裹，因为插入 `` `<tag>` `` 到 rawHtml 后，DOMParser 会把 `<tag>` 解析为实际 HTML 标签。
+ * 行内代码的智能转换在 restoreAngleBrackets 后处理阶段完成。
+ * No inline code wrapping here — inserting `` `<tag>` `` into rawHtml causes DOMParser to parse as actual HTML.
+ * Smart inline code conversion happens in restoreAngleBrackets post-processing.
+ */
+export function protectAngleBrackets(html: string): string {
+	return html
+		.replace(/&lt;/g, 'ANGLT')
+		.replace(/&gt;/g, 'ANGGT');
+}
+
+/**
+ * 后处理：恢复占位符，将 HTML 标签示例包裹为行内代码，其余保留为实体编码。
+ * Post-process: restore placeholders, wrap HTML tag patterns as inline code, others as entities.
+ *
+ * 在 markdown 输出上操作（此时 `<` 是安全文本字符，不会被解析为 HTML），
+ * 检测 ANGLT + 标签名 + ANGGT 模式转为 `` `<tag>` ``。
+ * Operates on markdown output where `<` is safe text (not parsed as HTML),
+ * detects ANGLT + tag name + ANGGT pattern → `` `<tag>` ``.
+ *
+ * 恢复顺序 / Restore order:
+ *   1. CODELT/CODEGT → < / >（代码块内，反引号围栏内安全）
+ *   2. ANGLT + HTML标签模式 + ANGGT → `` `<tag>` ``（行内代码）
+ *   3. 其余 ANGLT/ANGGT → &lt; / &gt;（普通文本，渲染为 < / >）
+ */
+export function restoreAngleBrackets(markdown: string): string {
+	// 1. 代码块内占位符（最优先，不受后续检测干扰）
+	markdown = markdown
+		.replace(/CODELT/g, '<')
+		.replace(/CODEGT/g, '>');
+
+	// 2. HTML 标签模式：ANGLT + 标签名 + 内容 + ANGGT → `<tag>`
+	// 匹配 ANGLT(标签名+属性)ANGGT，其中标签名必须以字母开头
+	markdown = markdown.replace(
+		/ANGLT(\/?[a-zA-Z][\w-]*(?:\s+(?:[\w:-]+(?:\s*=\s*(?:"[^">]*"|'[^'>]*'|[^\s"'>]+))?)*)?\s*)ANGGT/g,
+		(_full, inner: string) => {
+			// 确保是合法 HTML 标签名（可选 / 后为字母）
+			if (!/^[a-zA-Z]/.test(inner.replace(/^\//, ''))) {
+				return _full;
+			}
+			return `\`<${inner}>\``;
+		}
+	);
+
+	// 3. 其余 standalone 占位符 → 实体编码
+	markdown = markdown
+		.replace(/ANGLT/g, '&lt;')
+		.replace(/ANGGT/g, '&gt;');
+
+	return markdown;
+}
