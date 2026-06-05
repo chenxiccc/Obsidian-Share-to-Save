@@ -8,7 +8,7 @@
 import { Vault, normalizePath } from 'obsidian';
 import type { ParsedContent, ProcessResult, ShareToSaveSettings, Metadata } from './types';
 import { buildHeaders } from './http-utils';
-import { sanitizeFilename, computeEffectiveContent, normalizeTitle, normalizeBoldElements } from './text-utils';
+import { sanitizeFilename, computeEffectiveContent, normalizeTitle, normalizeBoldElements, protectAngleBrackets, restoreAngleBrackets } from './text-utils';
 import { ImageHandler } from './image-handler';
 import type { Translator } from './i18n';
 import { HeadlessExtractor } from './headless-extractor';
@@ -138,18 +138,35 @@ export class Downloader {
 	}
 
 	/**
-	 * 统一转换管线：HTML → DOMParser → Metadata → Converter → ParsedContent
-	 * Unified pipeline. Pure computation, no side effects.
+	 * 统一转换管线：预处理 → DOMParser → DOM规范化 → Metadata → Converter → 后处理
+	 * Unified pipeline: pre-process → DOMParser → DOM normalize → Metadata → Converter → post-process
+	 *
+	 * 预处理层和后处理层对所有页面统一执行，converter 只负责平台特有逻辑。
+	 * Pre/post processing applies to all pages; converters handle only platform-specific logic.
 	 */
 	private processDocToParsed(html: string, url: string): ParsedContent | null {
 		try {
+			// 预处理：替换 &lt;/&gt; 为占位符，防止 Turndown 输出原始 HTML 标签
+			html = protectAngleBrackets(html);
+
 			const doc = new DOMParser().parseFromString(html, 'text/html');
+
+			// DOM 规范化：所有 converter 共享
 			normalizeBoldElements(doc);
+
 			const metadata = MetadataExtractor.extract(doc, html);
 			const converter = findConverter(url);
 			const result = converter.convert(doc, url, html);
 			Downloader.applyMetadataPatch(metadata, result.metadataPatch);
-			const content = result.markdown;
+
+			// 后处理：恢复占位符（行内代码包裹 / 实体编码）
+			let content = result.markdown;
+			content = restoreAngleBrackets(content);
+
+			// metadata 文本字段也过一遍，防止标题中的 ANGLT 未被还原
+			if (metadata.title) metadata.title = restoreAngleBrackets(metadata.title);
+			if (metadata.author) metadata.author = restoreAngleBrackets(metadata.author);
+
 			const imageUrls = Downloader.extractImageUrls(content);
 			return { ...metadata, content, imageUrls };
 		} catch (err) {

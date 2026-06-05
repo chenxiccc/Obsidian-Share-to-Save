@@ -179,9 +179,20 @@ export function normalizeTitle(title: string, maxLength = 60): string {
  * Smart inline code conversion happens in restoreAngleBrackets post-processing.
  */
 export function protectAngleBrackets(html: string): string {
-	return html
-		.replace(/&lt;/g, 'ANGLT')
-		.replace(/&gt;/g, 'ANGGT');
+	// 跳过 <code>、<pre>、<title> 内的 &lt;，这些元素内的 &lt; 由
+	// DOMParser 解码后 Turndown/Defuddle 能正确处理（代码上下文安全）。
+	// Skip &lt; inside <code>, <pre>, <title> — their content is safe in code context.
+	const blocks: string[] = [];
+	html = html.replace(/<(code|pre|title)\b[^>]*>[\s\S]*?<\/\1>/gi, match => {
+		blocks.push(match);
+		return `\x00CODEBLOCK${blocks.length - 1}\x00`;
+	});
+
+	html = html.replace(/&lt;/g, 'ANGLT');
+	html = html.replace(/&gt;/g, 'ANGGT');
+
+	html = html.replace(/\x00CODEBLOCK(\d+)\x00/g, (_, idx) => blocks[parseInt(idx as string)] ?? '');
+	return html;
 }
 
 /**
@@ -194,17 +205,15 @@ export function protectAngleBrackets(html: string): string {
  * detects ANGLT + tag name + ANGGT pattern → `` `<tag>` ``.
  *
  * 恢复顺序 / Restore order:
- *   1. CODELT/CODEGT → < / >（代码块内，反引号围栏内安全）
- *   2. ANGLT + HTML标签模式 + ANGGT → `` `<tag>` ``（行内代码）
- *   3. 其余 ANGLT/ANGGT → &lt; / &gt;（普通文本，渲染为 < / >）
+ *   1. ANGLT + HTML标签模式 + ANGGT → `` `<tag>` ``（行内代码）
+ *   2. 其余 ANGLT/ANGGT → &lt; / &gt;（普通文本，渲染为 < / >）
+ *
+ * 注意：CODELT/CODEGT 已不再需要——第二轮 new DOMParser() 已不存在，
+ * normalizeCodeBlocks 通过 textContent 直接设置文本，无需占位符保护。
+ * Note: CODELT/CODEGT no longer needed — no second DOMParser round-trip.
  */
 export function restoreAngleBrackets(markdown: string): string {
-	// 1. 代码块内占位符（最优先，不受后续检测干扰）
-	markdown = markdown
-		.replace(/CODELT/g, '<')
-		.replace(/CODEGT/g, '>');
-
-	// 2. HTML 标签模式：ANGLT + 标签名 + 内容 + ANGGT → `<tag>`
+	// 1. HTML 标签模式：ANGLT + 标签名 + 内容 + ANGGT → `<tag>`
 	// 匹配 ANGLT(标签名+属性)ANGGT，其中标签名必须以字母开头
 	markdown = markdown.replace(
 		/ANGLT(\/?[a-zA-Z][\w-]*(?:\s+(?:[\w:-]+(?:\s*=\s*(?:"[^">]*"|'[^'>]*'|[^\s"'>]+))?)*)?\s*)ANGGT/g,
@@ -217,7 +226,7 @@ export function restoreAngleBrackets(markdown: string): string {
 		}
 	);
 
-	// 3. 其余 standalone 占位符 → 实体编码
+	// 2. 其余 standalone 占位符 → 实体编码
 	markdown = markdown
 		.replace(/ANGLT/g, '&lt;')
 		.replace(/ANGGT/g, '&gt;');

@@ -10,7 +10,7 @@ import TurndownService from 'turndown';
 import { gfm } from '@joplin/turndown-plugin-gfm';
 import Defuddle from 'defuddle/full';
 import type { Metadata } from './types';
-import { escapeObsidianTags, escapeLinkDestination, protectAngleBrackets, restoreAngleBrackets, normalizeBoldElements } from './text-utils';
+import { escapeObsidianTags, escapeLinkDestination } from './text-utils';
 
 // ─── 类型 / Types ──────────────────────────────────────────────────────────
 
@@ -637,111 +637,73 @@ class ObsidianPublishConverter implements ContentConverter {
 class ZhihuConverter implements ContentConverter {
 	readonly domainPattern = /zhuanlan\.zhihu\.com/;
 
-	convert(_doc: Document, url: string, rawHtml?: string): ConvertResult {
-		if (!rawHtml) {
-			// No rawHtml available, fall back to defuddle directly
-			return defuddleFallback.convert(_doc, url);
-		}
+	convert(doc: Document, url: string, _rawHtml?: string): ConvertResult {
+		// 直接操作管线 doc（已过 protectAngleBrackets + normalizeBoldElements）
+		this.stripEntityLinks(doc);
+		this.normalizeCodeBlocks(doc);
 
-		let html = rawHtml;
-
-		// Step 1: strip entity links (zhida keyword links with RichContent-EntityWord class)
-		html = this.stripEntityLinks(html);
-
-		// Step 2: protect angle brackets &lt; → ANGLT, &gt; → ANGGT
-		// DOMParser decodes HTML entities to literal chars; Turndown outputs them as
-		// raw HTML tags in markdown, which breaks the markdown parser state.
-		// Using plain-letter placeholders (no __ which would be bold in markdown).
-		html = protectAngleBrackets(html);
-
-		// Step 3: normalize single-cell <th> code tables to <pre><code>
-		// Zhihu wraps code blocks in single-cell <table date-draft-type="table"><th>
-		// instead of <pre><code>.
-		html = this.normalizeCodeBlocks(html);
-
-		// Re-parse with cleaned HTML
-		const doc = new DOMParser().parseFromString(html, 'text/html');
-		normalizeBoldElements(doc);
-
-		// Use Defuddle for full content extraction + markdown conversion
 		const result = new Defuddle(doc, { url, markdown: true, useAsync: false }).parse();
-		let markdown = result.content ?? '';
-
-		// Restore angle bracket placeholders
-		markdown = restoreAngleBrackets(markdown);
-
-		return { markdown };
+		return { markdown: result.content ?? '' };
 	}
 
 	/**
-	 * 剥离 <a class="...RichContent-EntityWord..."> 实体链接，保留纯文本
-	 * Strip zhida keyword entity links, keep plain text only (remove SVG icons)
+	 * 剥离 <a class="RichContent-EntityWord"> 实体链接，保留纯文本
+	 * Strip zhida keyword entity links in DOM, keep plain text only
 	 */
-	private stripEntityLinks(html: string): string {
-		// Match <a with class containing RichContent-EntityWord, capture inner content
-		return html.replace(/<a[^>]*class="[^"]*RichContent-EntityWord[^"]*"[^>]*>([\s\S]*?)<\/a>/g, (_match, inner: string) => {
-			// Remove all HTML tags from inner content (SVG, spans, etc.), keep only text
-			return inner.replace(/<[^>]+>/g, '');
+	private stripEntityLinks(doc: Document): void {
+		doc.querySelectorAll('a.RichContent-EntityWord').forEach(el => {
+			const text = el.textContent || '';
+			el.replaceWith(doc.createTextNode(text));
 		});
 	}
 
-
-
-
-
 	/**
 	 * 规范化代码块：单格 <th> 代码表 → <pre><code>
-	 * Normalize code blocks: single-cell <th> code table → <pre><code>
+	 * Normalize code blocks: single-cell <th> code table → <pre><code> in DOM
 	 *
 	 * Zhihu wraps code blocks in single-cell <table data-draft-type="table"><th>
 	 * with <br> line breaks (not <pre><code>). Detect by code-like content
 	 * and convert to standard <pre><code> format.
 	 */
-	private normalizeCodeBlocks(html: string): string {
-		// Match single-cell <th> tables with data-draft-type="table"
-		// Pattern: extract the <th> content for code detection
-		const TABLE_CODE_RE = /<table[^>]*data-draft-type\s*=\s*"table"[^>]*>[\s\S]*?<tbody>[\s\S]*?<tr>[\s\S]*?<th>([\s\S]*?)<\/th>[\s\S]*?<\/tr>[\s\S]*?<\/tbody>[\s\S]*?<\/table>/g;
+	private normalizeCodeBlocks(doc: Document): void {
+		doc.querySelectorAll('table[data-draft-type="table"]').forEach(table => {
+			// Only process single-cell <th> tables
+			const cells = Array.from(table.querySelectorAll('th, td'))
+				.filter(cell => (cell as Element).closest('table') === table);
+			if (cells.length !== 1) return;
 
-		return html.replace(TABLE_CODE_RE, (match, cellContent: string) => {
-			// Extract plain text from cell (strip HTML tags for detection)
-			const plainText = cellContent.replace(/<[^>]+>/g, '');
+			const cell = cells[0] as Element;
+			// Extract code text: <br> → newline, strip HTML, restore ANGLT → <
+			const html = cell.innerHTML;
+			const codeText = html
+				.replace(/<br\s*\/?>/gi, '\n')
+				.replace(/<[^>]+>/g, '')
+				// Pipeline protectAngleBrackets left ANGLT in text → restore for code
+				.replace(/ANGLT/g, '<')
+				.replace(/ANGGT/g, '>')
+				.replace(/&amp;/g, '&');
 
-			// Check if the content looks like code
-			// Heuristic: starts with code keywords (from, import, def, class, print, #, if, for, while, or assignment)
-			// or has multiple lines with code patterns
-			const isCode = /^\s*(?:from\s+|import\s+|def\s+|class\s+|print\s*\(|#\s|if\s+|for\s+|while\s+|\w+\s*=\s*)/m.test(plainText)
-				|| (plainText.split('\n').length >= 3 && /[=){}\[\]]/.test(plainText));
+			if (!this.isCodeLike(codeText)) return;
+			if (!codeText.trim()) return;
 
-			if (!isCode) {
-				return match; // Not code → leave intact
-			}
-
-			// Normalize: <br> → newline, strip HTML, wrap in <pre><code>
-			const codeText = cellContent
-				.replace(/<br\s*\/?>/gi, '\n')     // <br> → newline
-				.replace(/<[^>]+>/g, '')             // Strip all HTML tags
-				// ANGLT/ANGGT come from step 2 (standalone &lt;/&gt; that aren't tag patterns)
-				.replace(/ANGLT/g, '<')              // Restore < for code content
-				.replace(/ANGGT/g, '>')              // Restore > for code content
-				.replace(/&amp;/g, '&');              // Decode &amp; in code
-
-			// Preserve angle brackets in code by temporarily re-protecting them
-			// Use a different sentinel for code block content
-			const codeProtected = codeText
-				.replace(/</g, 'CODELT')
-				.replace(/>/g, 'CODEGT');
-
-			return `<pre><code>${codeProtected}</code></pre>`;
+			const pre = doc.createElement('pre');
+			const code = doc.createElement('code');
+			code.textContent = codeText;
+			pre.appendChild(code);
+			table.replaceWith(pre);
 		});
+	}
+
+	/**
+	 * 检测文本是否像代码
+	 * Detect if text looks like code
+	 */
+	private isCodeLike(text: string): boolean {
+		return /^\s*(?:from\s+|import\s+|def\s+|class\s+|print\s*\(|#\s|if\s+|for\s+|while\s+|\w+\s*=\s*)/m.test(text)
+			|| (text.split('\n').length >= 3 && /[=\){}\[\]]/.test(text));
 	}
 }
 
-// ─── Defuddle 通用回退 / Defuddle Generic Fallback ───────────────────────────
-
-/**
- * 无平台转换器匹配时，使用 defuddle 全量解析作为兜底
- * When no platform converter matches, use defuddle full parse as fallback
- */
 class DefuddleConverter implements ContentConverter {
 	readonly domainPattern = /.*/;
 
