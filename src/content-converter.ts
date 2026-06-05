@@ -263,6 +263,34 @@ class WeChatConverter implements ContentConverter {
 			firstChild.remove();
 		});
 
+		// 6. 加粗元素规范化：扁平化嵌套 + 确保 bold 与后续内容之间有空格
+		//    Normalize bold elements: flatten nesting + ensure space between bold and following content
+		// 6a. 扁平化嵌套的 strong/b 标签 / Flatten nested strong/b tags
+		clone.querySelectorAll('strong strong, strong b, b strong, b b').forEach(el => {
+			const parent = el.parentNode;
+			if (!parent) return;
+			while (el.firstChild) parent.insertBefore(el.firstChild, el);
+			el.remove();
+		});
+		// 6b. 确保 bold 结束标签后有空格（防止 Turndown 输出 **text**nextText 导致 Obsidian 渲染失败）
+		//     Ensure space after bold closing tag (prevent **text**nextText causing Obsidian rendering failure)
+		clone.querySelectorAll('strong, b').forEach(el => {
+			const next = el.nextSibling;
+			if (!next) return;
+			// 文本节点：检查是否以非空白开头 / Text node: check if starts with non-whitespace
+			if (next.nodeType === 3) {
+				const text = next.textContent || '';
+				if (text && !/^\s/.test(text)) {
+					next.textContent = ' ' + text;
+				}
+				return;
+			}
+			// 元素节点：el.nextSibling === next 表示中间没有文本节点 / no text node between
+			if (next.nodeType === 1 && el.nextSibling === next) {
+				el.parentNode?.insertBefore(document.createTextNode(' '), next);
+			}
+		});
+
 		return `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>${clone.innerHTML}</body></html>`;
 	}
 
