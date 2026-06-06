@@ -116,12 +116,9 @@ export default class ShareToSavePlugin extends Plugin {
 			return;
 		}
 
-		await this.queueManager.appendEntry({
-			id: crypto.randomUUID(),
-			url,
-			source: Platform.isDesktop ? 'desktop' : 'mobile',
-			createdAt: new Date().toISOString(),
-		});
+		await this.queueManager.appendEntry(
+			QueueManager.buildEntry(url, Platform.isDesktop ? 'desktop' : 'mobile'),
+		);
 
 		// 桌面端立即触发处理 / Desktop: trigger immediate processing
 		if (Platform.isDesktop) {
@@ -146,12 +143,9 @@ export default class ShareToSavePlugin extends Plugin {
 
 		// 统一入队 / Enqueue all URLs
 		for (const url of urls) {
-			await this.queueManager.appendEntry({
-				id: crypto.randomUUID(),
-				url,
-				source: Platform.isDesktop ? 'desktop' : 'mobile',
-				createdAt: new Date().toISOString(),
-			});
+			await this.queueManager.appendEntry(
+				QueueManager.buildEntry(url, Platform.isDesktop ? 'desktop' : 'mobile'),
+			);
 		}
 
 		// 数量通知 / Count notification

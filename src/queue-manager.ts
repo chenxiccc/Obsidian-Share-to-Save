@@ -22,18 +22,26 @@ const QUEUE_PREFIX = 'toBeSaved_';
 const QUEUE_SUFFIX = '.json';
 
 export class QueueManager {
-	private readonly outputFolder: string;
-
 	constructor(
 		private vault: Vault,
-		outputFolder: string,
+		private outputFolder: string,
 		/**
 		 * 可选：用于内存查 frontmatter.sts_id，跳过已处理的 .md 文件，避免文件 I/O
 		 * Optional: used to check frontmatter.sts_id in memory, skipping processed .md files
 		 */
 		private metadataCache?: MetadataCache,
-	) {
-		this.outputFolder = outputFolder;
+	) {}
+
+	/**
+	 * 构建标准 QueueEntry 对象 / Build a standard QueueEntry object
+	 */
+	static buildEntry(url: string, source: QueueEntry['source']): QueueEntry {
+		return {
+			id: crypto.randomUUID(),
+			url,
+			source,
+			createdAt: new Date().toISOString(),
+		};
 	}
 
 	/**
@@ -69,11 +77,11 @@ export class QueueManager {
 	async getPendingEntries(): Promise<QueueEntryWithPath[]> {
 		await this.ensureDir();
 
-		// 先将分享菜单 .md 文件转换为标准队列条目 / Convert share-menu .md files first
-		await this.convertShareMenuNotes();
+		// 一次 list()，转换和队列过滤共用 / Single list(), shared by conversion and queue filtering
+		const listing = await this.vault.adapter.list(this.outputFolder);
+		await this.convertShareMenuNotes(listing.files);
 
-		const files = await this.vault.adapter.list(this.outputFolder);
-		const queueFiles = files.files
+		const queueFiles = listing.files
 			.filter(f => {
 				const name = f.split('/').pop() || '';
 				return name.startsWith(QUEUE_PREFIX) && name.endsWith(QUEUE_SUFFIX);
@@ -114,55 +122,47 @@ export class QueueManager {
 	 *
 	 * ★ 先删 .md 再建队列条目，防止中间崩溃导致下次重复处理
 	 * ★ Delete .md before creating queue entries to prevent duplicate on crash
+	 *
+	 * @param filePaths 文件路径列表（来自调用方的一次 list()）/ File paths from a single list() call
 	 */
-	private async convertShareMenuNotes(): Promise<void> {
-		const files = await this.vault.adapter.list(this.outputFolder);
-
-		for (const filePath of files.files) {
+	private async convertShareMenuNotes(filePaths: string[]): Promise<void> {
+		for (const filePath of filePaths) {
 			if (!filePath.endsWith('.md')) continue;
 
 			try {
-				// ── 判断是否已处理 / Check if already processed ──
-				let hasStsId = false;
-
-				// 优先从 metadataCache 内存查（0 I/O）/ Try cache first (0 I/O)
+				// ── 守卫 1: metadataCache 已有 sts_id → 跳过（0 I/O）──
+				// Guard 1: metadataCache already has sts_id → skip (0 I/O)
 				if (this.metadataCache) {
 					const cache = this.metadataCache.getCache(filePath);
-					if (cache?.frontmatter) {
-						hasStsId = 'sts_id' in cache.frontmatter;
+					if (cache?.frontmatter && 'sts_id' in cache.frontmatter) {
+						continue;
 					}
 				}
 
-				// 缓存未命中则读文件确认 / Read file as fallback if cache miss
-				if (!hasStsId) {
-					const raw = await this.vault.adapter.read(filePath);
-					if (!raw.trim()) continue;
+				// ── 守卫 2: 读文件 + 正则检测 sts_id → 跳过 ──
+				// Guard 2: read file + regex check sts_id → skip
+				const raw = await this.vault.adapter.read(filePath);
+				if (!raw.trim()) continue;
 
-					// 精确检测 frontmatter 块中是否含 sts_id
-					// Precisely check for sts_id within frontmatter block
-					hasStsId = /^---[\s\S]*?\bsts_id\s*:[\s\S]*?^---/m.test(raw);
+				// 精确检测 frontmatter 块中是否含 sts_id
+				// Precisely check for sts_id within frontmatter block
+				if (/^---[\s\S]*?\bsts_id\s*:[\s\S]*?^---/m.test(raw)) continue;
 
-					// 已处理 → 跳过 / Already processed → skip
-					if (hasStsId) continue;
+				// ── 守卫 3: 无可提取 URL → 跳过 ──
+				// Guard 3: no extractable URLs → skip
+				const urls = extractUrls(raw);
+				if (urls.length === 0) continue;
 
-					// ── 提取 URL 并转换 / Extract URLs and convert ──
-					const urls = extractUrls(raw);
-					if (urls.length === 0) continue;
+				// ── 转换：先删 .md 再建队列条目 ──
+				// Convert: delete .md first, then create queue entries
+				await this.vault.adapter.remove(filePath);
 
-					// ★ 先删除原始文件（防崩溃重复）
-					// ★ Delete original first (prevent re-detection on crash)
-					await this.vault.adapter.remove(filePath);
-
-					// 再创建队列条目 / Then create queue entries
-					for (const url of urls) {
-						await this.appendEntry({
-							id: crypto.randomUUID(),
-							url,
-							source: 'mobile',
-							createdAt: new Date().toISOString(),
-						});
-					}
-				}
+				const now = new Date().toISOString();
+				await Promise.all(
+					urls.map(url => this.appendEntry(
+						QueueManager.buildEntry(url, 'mobile'),
+					)),
+				);
 			} catch {
 				// 读取/删除失败则跳过（文件可能正在同步）/ Skip on failure (file may be syncing)
 			}
