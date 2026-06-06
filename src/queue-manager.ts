@@ -24,7 +24,7 @@ const QUEUE_SUFFIX = '.json';
 export class QueueManager {
 	constructor(
 		private vault: Vault,
-		private outputFolder: string,
+		private readonly outputFolder: string,
 		/**
 		 * 可选：用于内存查 frontmatter.sts_id，跳过已处理的 .md 文件，避免文件 I/O
 		 * Optional: used to check frontmatter.sts_id in memory, skipping processed .md files
@@ -77,11 +77,14 @@ export class QueueManager {
 	async getPendingEntries(): Promise<QueueEntryWithPath[]> {
 		await this.ensureDir();
 
-		// 一次 list()，转换和队列过滤共用 / Single list(), shared by conversion and queue filtering
+		// 先列文件用于 md 检测 / List files for md detection
 		const listing = await this.vault.adapter.list(this.outputFolder);
 		await this.convertShareMenuNotes(listing.files);
 
-		const queueFiles = listing.files
+		// 重新列出：convertShareMenuNotes 可能创建了新队列文件
+		// Re-list: convertShareMenuNotes may have created new queue files
+		const files = await this.vault.adapter.list(this.outputFolder);
+		const queueFiles = files.files
 			.filter(f => {
 				const name = f.split('/').pop() || '';
 				return name.startsWith(QUEUE_PREFIX) && name.endsWith(QUEUE_SUFFIX);
