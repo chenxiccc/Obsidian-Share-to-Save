@@ -25,7 +25,7 @@ An Obsidian plugin that automatically downloads shared web pages as Markdown not
 
 ## Installation
 
-- **iOS Obsidian ≥ 1.13.0** — Obsidian 1.13 introduced a new native share menu. Install the plugin on **desktop only** (mobile not required). When sharing, select `Share-to-Save` as the target folder in the new share menu.
+- **iOS Obsidian ≥ 1.13.0** — Obsidian 1.13 introduced a new share sheet menu. Install the plugin on **desktop only** (mobile not required). When sharing, select `Share-to-Save` as the target folder in the new share sheet menu.
 - **iOS < 1.13.0 / Android** — Install the plugin on **both mobile and desktop**. Share via the in-app share menu (the plugin injects a "Save to Share-to-Save" button).
 
 #### Desktop (Direct URL Input)
