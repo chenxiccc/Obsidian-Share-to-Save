@@ -23,6 +23,11 @@ An Obsidian plugin that automatically downloads shared web pages as Markdown not
 3. Sync to your desktop (see [Sync Methods](#sync-methods) below)
 4. The desktop plugin detects the entry and automatically fetches the full web content, saving it as a `.md` note
 
+## Installation
+
+- **iOS Obsidian ≥ 1.13.0** — Obsidian 1.13 introduced a new native share menu. Install the plugin on **desktop only** (mobile not required). When sharing, select `Share-to-Save` as the target folder in the new share menu.
+- **iOS < 1.13.0 / Android** — Install the plugin on **both mobile and desktop**. Share via the in-app share menu (the plugin injects a "Save to Share-to-Save" button).
+
 #### Desktop (Direct URL Input)
 
 - Click the left ribbon button (cloud download icon)
@@ -89,6 +94,11 @@ Share to Save 是一款 Obsidian 插件，将分享的网页 URL 自动下载为
 4. URL 写入 Share-to-Save文件夹下的队列文件
 5. 同步到桌面端（见下方[同步方式](#同步方式)）
 6. 桌面端插件检测到条目，自动获取网页全部内容，保存为 `.md` 笔记
+
+## 安装说明
+
+- **iOS Obsidian ≥ 1.13.0** — Obsidian 1.13 引入了新的原生分享菜单。插件**只需安装在桌面端**（手机无需安装）。分享时，在新分享菜单的 Folder 中选择 `Share-to-Save` 目录。
+- **iOS < 1.13.0 / Android** — 需要在**手机和电脑上都安装**插件。通过 Obsidian 应用内分享菜单操作（插件会自动注入"保存到 Share to Save"按钮）。
 
 #### 桌面端（直接输入 URL）
 
