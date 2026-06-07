@@ -98,8 +98,6 @@ export class QueueManager {
 				if (!raw.trim()) continue;
 				const entry: unknown = JSON.parse(raw);
 				if (QueueManager.isQueueEntry(entry)) {
-					// 附带文件路径，后续直接用路径删除，避免文件名解析
-					// Attach file path for direct deletion later, avoiding filename parsing
 					entries.push({ ...entry, filePath });
 				}
 			} catch {
@@ -110,31 +108,25 @@ export class QueueManager {
 	}
 
 	/**
-	 * 将新分享菜单创建的 .md 文件转换为标准队列条目
-	 * Convert share-menu-created .md files to standard queue entries
+	 * 将无 sts_id 的 .md 文件转换为标准队列条目
+	 * Convert .md files without sts_id to standard queue entries
 	 *
 	 * 通过 frontmatter 中是否包含 sts_id 区分已处理文件和外来文件：
 	 *   - metadataCache 命中且 frontmatter 有 sts_id → 跳过（0 I/O）
 	 *   - metadataCache 未命中 → 读文件，正则检查 sts_id
 	 *   - 无 sts_id → extractUrls() 提取 URL → 删 .md → 建 toBeSaved_*.json
 	 *
-	 * Distinguished by presence of sts_id in frontmatter:
-	 *   - metadataCache hit with sts_id → skip (0 I/O)
-	 *   - metadataCache miss → read file, regex check sts_id
-	 *   - No sts_id → extractUrls() → delete .md → create toBeSaved_*.json
-	 *
 	 * ★ 先删 .md 再建队列条目，防止中间崩溃导致下次重复处理
-	 * ★ Delete .md before creating queue entries to prevent duplicate on crash
 	 *
-	 * @param filePaths 文件路径列表（来自调用方的一次 list()）/ File paths from a single list() call
+	 * @param filePaths 文件路径列表 / File paths from a single list() call
 	 */
 	private async convertShareMenuNotes(filePaths: string[]): Promise<void> {
 		for (const filePath of filePaths) {
 			if (!filePath.endsWith('.md')) continue;
+			const fileName = filePath.split('/').pop() || filePath;
 
 			try {
 				// ── 守卫 1: metadataCache 已有 sts_id → 跳过（0 I/O）──
-				// Guard 1: metadataCache already has sts_id → skip (0 I/O)
 				if (this.metadataCache) {
 					const cache = this.metadataCache.getCache(filePath);
 					if (cache?.frontmatter && 'sts_id' in cache.frontmatter) {
@@ -143,21 +135,19 @@ export class QueueManager {
 				}
 
 				// ── 守卫 2: 读文件 + 正则检测 sts_id → 跳过 ──
-				// Guard 2: read file + regex check sts_id → skip
 				const raw = await this.vault.adapter.read(filePath);
 				if (!raw.trim()) continue;
-
-				// 精确检测 frontmatter 块中是否含 sts_id
-				// Precisely check for sts_id within frontmatter block
 				if (/^---[\s\S]*?\bsts_id\s*:[\s\S]*?^---/m.test(raw)) continue;
 
 				// ── 守卫 3: 无可提取 URL → 跳过 ──
-				// Guard 3: no extractable URLs → skip
 				const urls = extractUrls(raw);
-				if (urls.length === 0) continue;
+				if (urls.length === 0) {
+					console.debug(`Share to Save: 无 URL 跳过 / no URL skip: ${fileName}`);
+					continue;
+				}
 
 				// ── 转换：先删 .md 再建队列条目 ──
-				// Convert: delete .md first, then create queue entries
+				console.debug(`Share to Save: 转换 / converting: ${fileName} → ${urls.length} URL(s)`);
 				await this.vault.adapter.remove(filePath);
 
 				const now = new Date().toISOString();
