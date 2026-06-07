@@ -150,7 +150,6 @@ export class QueueManager {
 				console.debug(`Share to Save: 转换 / converting: ${fileName} → ${urls.length} URL(s)`);
 				await this.vault.adapter.remove(filePath);
 
-				const now = new Date().toISOString();
 				await Promise.all(
 					urls.map(url => this.appendEntry(
 						QueueManager.buildEntry(url, 'mobile'),
