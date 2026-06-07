@@ -630,28 +630,60 @@ class ObsidianPublishConverter implements ContentConverter {
 	}
 }
 
+
+
+/**
+ * 从知乎问答页 DOM 中定位回答正文容器
+ * Locate answer content container from Zhihu Q&A page DOM
+ */
+function findAnswerContent(doc: Document): Element | null {
+	// 知乎问答页回答正文在 span.RichText.ztext 中
+	// Zhihu answer body is in span.RichText.ztext
+	const selectors = [
+		'span.RichText.ztext',
+		'.RichContent-inner .RichText',
+		'.AnswerItem .RichText',
+	];
+	for (const sel of selectors) {
+		const el = doc.querySelector(sel);
+		if (el && el.textContent && el.textContent.length > 100) return el;
+	}
+	return null;
+}
+
 // ─── 知乎转换器 / Zhihu Converter ─────────────────────────────────────────────
 
 /**
- * 知乎专栏页面转换器
- * Zhihu zhuanlan article converter
+ * 知乎页面转换器（专栏 + 问答）
+ * Zhihu page converter (zhuanlan + answer)
  *
- * 预处理 rawHtml 修复三个问题：
+ * 架构设计：专栏和问答走不同的预处理入口方法，共用 stripEntityLinks + Defuddle。
+ * 每个入口方法内部按需追加独立的 private 方法，保持 convert() 稳定、类内聚。
+ * Architecture: zhuanlan and answer each have their own preprocessing entry,
+ * sharing stripEntityLinks + Defuddle. Each entry appends focused private methods
+ * as needed, keeping convert() stable and the class cohesive.
+ *
+ * 共享预处理：
  * 1. 剥离 <a.RichContent-EntityWord> 实体链接（zhida.zhihu.com 关键词链接）
- * 2. 保护 &lt; &gt; 防止 DOMParser 解码后 Turndown 输出原始 HTML 标签
- * 3. 单格 <th> 代码表 → <pre><code>
- * Three fixes via rawHtml preprocessing:
+ * Shared preprocessing:
  * 1. Strip entity links (zhida.zhihu.com keyword links)
- * 2. Protect &lt; &gt; from being decoded and output as raw HTML tags
- * 3. Convert single-cell <th> code tables to <pre><code>
+ *
+ * 专栏（zhuanlan）：preprocessZhuanlan()
+ * 问答（answer/question）：preprocessAnswer()
  */
 class ZhihuConverter implements ContentConverter {
-	readonly domainPattern = /zhuanlan\.zhihu\.com/;
+	readonly domainPattern = /zhihu\.com/;
 
 	convert(doc: Document, url: string, _rawHtml?: string): ConvertResult {
 		// 直接操作管线 doc（已过 protectAngleBrackets + normalizeBoldElements）
+		// Operate directly on pipeline doc (already through protectAngleBrackets + normalizeBoldElements)
 		this.stripEntityLinks(doc);
-		this.normalizeCodeBlocks(doc);
+
+		if (/zhuanlan\.zhihu\.com/.test(url)) {
+			this.preprocessZhuanlan(doc);
+		} else {
+			this.preprocessAnswer(doc);
+		}
 
 		const result = new Defuddle(doc, { url, markdown: true, useAsync: false }).parse();
 		return { markdown: result.content ?? '' };
@@ -668,15 +700,31 @@ class ZhihuConverter implements ContentConverter {
 		});
 	}
 
+	// ─── 专栏预处理 / Zhuanlan Preprocessing ──────────────────────────────────
+
 	/**
-	 * 规范化代码块：单格 <th> 代码表 → <pre><code>
-	 * Normalize code blocks: single-cell <th> code table → <pre><code> in DOM
+	 * 专栏预处理入口：所有专栏页 DOM 规范化在此方法内追加
+	 * Zhuanlan preprocessing entry: all zhuanlan DOM normalization appends here
 	 *
-	 * Zhihu wraps code blocks in single-cell <table data-draft-type="table"><th>
+	 * 当前仅包含代码块规范化。方法体刻意保持简洁——未来专栏特有的格式修复
+	 * （如图片、表格、特殊样式）均在此方法内追加，避免 convert() 膨胀。
+	 * Currently only code block normalization. The method is intentionally minimal —
+	 * future zhuanlan-specific fixes (images, tables, special styling) append here
+	 * to keep convert() lean.
+	 */
+	private preprocessZhuanlan(doc: Document): void {
+		this.normalizeTableCodeBlocks(doc);
+	}
+
+	/**
+	 * 专栏代码块规范化：单格 <th> 代码表 → <pre><code>
+	 * Zhuanlan code block normalization: single-cell <th> code table → <pre><code>
+	 *
+	 * Zhihu zhuanlan wraps code blocks in <table data-draft-type="table"><th>
 	 * with <br> line breaks (not <pre><code>). Detect by code-like content
 	 * and convert to standard <pre><code> format.
 	 */
-	private normalizeCodeBlocks(doc: Document): void {
+	private normalizeTableCodeBlocks(doc: Document): void {
 		doc.querySelectorAll('table[data-draft-type="table"]').forEach(table => {
 			// Only process single-cell <th> tables
 			const cells = Array.from(table.querySelectorAll('th, td'))
@@ -712,6 +760,80 @@ class ZhihuConverter implements ContentConverter {
 	private isCodeLike(text: string): boolean {
 		return /^\s*(?:from\s+|import\s+|def\s+|class\s+|print\s*\(|#\s|if\s+|for\s+|while\s+|\w+\s*=\s*)/m.test(text)
 			|| (text.split('\n').length >= 3 && /[=){}[\]]/.test(text));
+	}
+
+	// ─── 问答预处理 / Answer Preprocessing ──────────────────────────────────
+
+	/**
+	 * 问答预处理入口：所有问答页 DOM 规范化在此方法内追加
+	 * Answer preprocessing entry: all answer page DOM normalization appends here
+	 *
+	 * 当前包含：内容区域限定 + 代码块规范化 + 懒加载图片修复。
+	 * 方法体刻意保持为入口调度层——未来问答特有的格式修复在此方法内追加，
+	 * 每个修复项独立一个 private 方法，保持职责单一。
+	 * Currently: content scoping + code block normalization + lazy image fix.
+	 * The method is intentionally a dispatch layer — future answer-specific fixes
+	 * append here, each as a focused private method for single responsibility.
+	 */
+	private preprocessAnswer(doc: Document): void {
+		// 将 body 内容替换为仅回答内容，避免知乎 UI 干扰 Defuddle 提取
+		// Replace body content with answer-only content to avoid Zhihu UI confusing Defuddle
+		const answerContent = findAnswerContent(doc);
+		if (answerContent) {
+			doc.body.innerHTML = '';
+			doc.body.appendChild(answerContent);
+		}
+
+		this.normalizeHighlightCodeBlocks(doc);
+		this.normalizeLazyImages(doc);
+	}
+
+	/**
+	 * 问答代码块规范化：div.highlight > pre > code.language-xxx → 标准 pre>code
+	 * Answer code block normalization: div.highlight > pre > code.language-xxx → standard pre>code
+	 *
+	 * 知乎问答页使用 highlight.js 风格的代码块，包裹在 div.highlight 中。
+	 * 去包裹并确保语言类名被保留。
+	 * Zhihu answer pages use highlight.js-style blocks wrapped in div.highlight.
+	 * Unwrap and ensure language class is preserved.
+	 */
+	private normalizeHighlightCodeBlocks(doc: Document): void {
+		doc.querySelectorAll('div.highlight').forEach(highlight => {
+			const pre = highlight.querySelector('pre');
+			if (!pre) return;
+			const code = pre.querySelector('code');
+			if (!code) return;
+
+			// 将语言类名从 code 传递到 pre，确保 Defuddle 识别
+			// Propagate language class from code to pre so Defuddle recognizes it
+			const langClass = Array.from(code.classList).find(c => c.startsWith('language-'));
+			if (langClass && !pre.classList.contains(langClass)) {
+				pre.classList.add(langClass);
+			}
+
+			// 去包裹 div.highlight：将 pre 移到 highlight 的位置
+			// Unwrap div.highlight: move pre to highlight's position
+			highlight.replaceWith(pre);
+		});
+	}
+
+	/**
+	 * 懒加载图片修复：data-actualsrc → src
+	 * Lazy image fix: promote data-actualsrc to src
+	 *
+	 * 知乎问答页懒加载图片使用 data:image/svg+xml 占位符作为 src，
+	 * 真实 URL 存储在 data-actualsrc 属性中。在进入 Defuddle 前替换。
+	 * Zhihu answer lazy images use data:image/svg+xml placeholder as src,
+	 * real URL stored in data-actualsrc. Replace before Defuddle.
+	 */
+	private normalizeLazyImages(doc: Document): void {
+		doc.querySelectorAll('img[data-actualsrc]').forEach(img => {
+			const actualSrc = img.getAttribute('data-actualsrc');
+			const currentSrc = img.getAttribute('src') || '';
+			if (actualSrc && (currentSrc.startsWith('data:') || !currentSrc)) {
+				img.setAttribute('src', actualSrc);
+			}
+		});
 	}
 }
 
