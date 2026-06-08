@@ -456,7 +456,6 @@ interface XhsNote {
 	imageList?: XhsNoteImage[];
 	user?: XhsNoteUser;
 	time?: number;           // 发布时间，毫秒 Unix 时间戳 / Publish time, ms Unix timestamp
-	lastUpdateTime?: number; // 最后更新时间，毫秒 / Last update time, ms
 }
 
 interface XhsNoteDetailMap {
@@ -866,9 +865,13 @@ class ZhihuConverter implements ContentConverter {
 			// Defuddle strips trailing small text, so append inside answerContent before scoping.
 			const timeEl = doc.querySelector('.ContentItem-time');
 			if (timeEl && timeEl.textContent?.trim()) {
-				const timePara = doc.createElement('p');
-				timePara.textContent = timeEl.textContent.trim();
-				answerContent.appendChild(timePara);
+				// 使用 <span> 而非 <p>：answerContent 可能是 span.RichText，
+				// <p>（块级）在 <span>（内联）内违反 HTML 内容模型
+				// Use <span> not <p>: answerContent may be span.RichText,
+				// <p> (block) inside <span> (inline) violates HTML content model
+				const timeSpan = doc.createElement('span');
+				timeSpan.textContent = timeEl.textContent.trim();
+				answerContent.appendChild(timeSpan);
 			}
 
 			doc.body.innerHTML = '';
