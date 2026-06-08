@@ -679,6 +679,18 @@ class ZhihuConverter implements ContentConverter {
 		// Operate directly on pipeline doc (already through protectAngleBrackets + normalizeBoldElements)
 		this.stripEntityLinks(doc);
 
+		// 移除登录弹窗/未登录提示，防止 headless 未登录时干扰内容提取
+		// 专栏和问答共享：selector 不存在时 querySelectorAll 返回空，静默跳过
+		// Remove login modal/not-logged-in prompt to prevent interference in headless mode
+		// Shared by zhuanlan & answer: querySelectorAll returns empty when selector absent, silently skipped
+		const loginSelectors = [
+			'.signFlowModal',             // 登录弹窗 / login modal dialog
+			'.Question-mainColumnLogin',  // 问答页内嵌登录提示条 / inline login prompt on answer pages
+		];
+		loginSelectors.forEach(sel => {
+			try { doc.querySelectorAll(sel).forEach(n => n.remove()); } catch { /* skip */ }
+		});
+
 		if (/zhuanlan\.zhihu\.com/.test(url)) {
 			this.preprocessZhuanlan(doc);
 		} else {
