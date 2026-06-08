@@ -90,7 +90,7 @@ function guessFileExtension(url: string): string {
  * correct the extension using Content-Type, which takes priority over URL extension.
  */
 function contentTypeToExt(contentType: string): string {
-	const ct = contentType.split(';')[0].trim().toLowerCase();
+	const ct = (contentType.split(';')[0] ?? '').trim().toLowerCase();
 	if (ct === 'image/png') return '.png';
 	if (ct === 'image/jpeg' || ct === 'image/jpg') return '.jpg';
 	if (ct === 'image/gif') return '.gif';
