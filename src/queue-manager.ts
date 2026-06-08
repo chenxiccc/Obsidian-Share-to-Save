@@ -75,7 +75,10 @@ export class QueueManager {
 	 * Internally calls convertShareMenuNotes() first to convert share-menu .md to queue entries
 	 */
 	async getPendingEntries(): Promise<QueueEntryWithPath[]> {
-		await this.ensureDir();
+		// 目录不存在说明无待处理任务，直接返回空数组，避免无谓创建空目录
+		// Directory doesn't exist means no pending tasks, return early to avoid creating empty dir
+		const dirExists = await this.vault.adapter.exists(this.outputFolder);
+		if (!dirExists) return [];
 
 		// 先列文件用于 md 检测 / List files for md detection
 		const listing = await this.vault.adapter.list(this.outputFolder);
