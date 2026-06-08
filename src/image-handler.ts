@@ -89,6 +89,25 @@ function guessFileExtension(url: string): string {
 }
 
 /**
+ * 根据 HTTP Content-Type 推导文件扩展名
+ * Derive file extension from HTTP Content-Type header
+ *
+ * 当 URL 扩展名与实际内容类型不一致时（如知乎 CDN .avis 实际是 PNG），
+ * 用 Content-Type 修正扩展名，优先级高于 URL 扩展名。
+ * When URL extension doesn't match actual content type (e.g. Zhihu CDN .avis is actually PNG),
+ * correct the extension using Content-Type, which takes priority over URL extension.
+ */
+function contentTypeToExt(contentType: string): string {
+	const ct = contentType.split(';')[0]?.trim().toLowerCase() ?? '';
+	if (ct === 'image/png') return '.png';
+	if (ct === 'image/jpeg' || ct === 'image/jpg') return '.jpg';
+	if (ct === 'image/gif') return '.gif';
+	if (ct === 'image/webp') return '.webp';
+	if (ct === 'image/svg+xml') return '.svg';
+	return '';
+}
+
+/**
  * 从 URL 构建稳定的本地文件名
  * Build stable local filename from URL
  *
@@ -98,7 +117,7 @@ function guessFileExtension(url: string): string {
  */
 function buildStableFilename(
 	url: string,
-	options: { titleBase?: string; fallbackName: string; fallbackExt?: string },
+	options: { titleBase?: string; fallbackName: string; fallbackExt?: string; contentType?: string },
 ): string {
 	let filename = '';
 	let ext = '';
@@ -119,6 +138,21 @@ function buildStableFilename(
 
 	if (!ext) {
 		ext = extractExtFromUrl(url) || guessFileExtension(url) || options.fallbackExt || '';
+	}
+
+	// Content-Type 修正：当 HTTP 响应的实际内容类型与 URL 扩展名不一致时，覆盖扩展名
+	// Content-Type correction: override extension when actual content type differs from URL extension
+	if (options.contentType) {
+		const ctExt = contentTypeToExt(options.contentType);
+		if (ctExt && ext && ext !== ctExt) {
+			// 剥离 filename 中旧扩展名，否则 filename.includes('.') 为 true 会跳过新扩展名拼接
+			// Strip old extension from filename, otherwise filename.includes('.') stays true
+			const dotIdx = filename.lastIndexOf('.');
+			if (dotIdx > 0) {
+				filename = filename.slice(0, dotIdx);
+			}
+			ext = ctExt;
+		}
 	}
 
 	const safeTitle = sanitizeTitle(options.titleBase, options.fallbackName);
@@ -266,7 +300,7 @@ export class ImageHandler {
 
 		// Phase 1: 并发下载（最多 3 并发，15s 超时 + 1 次重试）
 		// Phase 1: concurrent download (max 3 concurrent, 15s timeout + 1 retry)
-		type DownloadResult = { full: string; url: string; buffer: Buffer } | { full: string; url: string; buffer: null };
+		type DownloadResult = { full: string; url: string; buffer: Buffer; contentType: string } | { full: string; url: string; buffer: null };
 		// 回调内所有路径都 catch，不会抛异常，null 情况不会发生 / Callback catches all errors, null case impossible
 		const downloadResults = await this.withConcurrencyLimit(matches, 3, async (m) => {
 			// 非图片链接仅处理可识别文件扩展名的 URL，网页链接保持原样
@@ -276,8 +310,8 @@ export class ImageHandler {
 				return { full: m.full, url: m.url, buffer: null };
 			}
 			try {
-				const buffer = await this.downloadWithRetry(m.url, sourceUrl);
-				return { full: m.full, url: m.url, buffer };
+				const { buffer, contentType } = await this.downloadWithRetry(m.url, sourceUrl);
+				return { full: m.full, url: m.url, buffer, contentType };
 			} catch (err) {
 				console.warn(`Share to Save: 附件下载失败 / Attachment download failed: ${m.url}`, err);
 				return { full: m.full, url: m.url, buffer: null };
@@ -288,12 +322,13 @@ export class ImageHandler {
 		// Phase 2: sequential apply (dedup + save + replace, must be sequential for correct dedup and string replacement)
 		for (const result of downloadResults) {
 			if (!result.buffer) continue;
-			const { full, url, buffer } = result;
+			const { full, url, buffer, contentType } = result;
 
 			const filename = buildStableFilename(url, {
 				titleBase: noteTitle,
 				fallbackName: 'image',
 				fallbackExt: '.png',
+				contentType,
 			});
 
 			const localPath = `${this.attachmentsDir}/${filename}`;
@@ -353,13 +388,13 @@ export class ImageHandler {
 	 * 通过 Node.js https.get 获取二进制数据
 	 * Fetch binary data via Node.js https.get
 	 */
-	private nodeHttpsGetBuffer(url: string, sourceUrl?: string): Promise<Buffer> {
+	private nodeHttpsGetBuffer(url: string, sourceUrl?: string): Promise<{ buffer: Buffer; contentType: string }> {
 		// 根据协议动态选择模块，支持 HTTP 和 HTTPS / Select module by protocol, support both HTTP and HTTPS
 		const protocol = new URL(url).protocol === 'http:' ? 'http' : 'https';
 		// eslint-disable-next-line @typescript-eslint/no-require-imports -- Dynamic require for Node.js protocol module based on URL scheme
 		const mod = require(protocol) as typeof import('https');
 
-		return new Promise<Buffer>((resolve, reject) => {
+		return new Promise<{ buffer: Buffer; contentType: string }>((resolve, reject) => {
 			const doRequest = (requestUrl: string): void => {
 				const headers = buildHeaders(sourceUrl, 'image/*, */*');
 				const req = mod.get(requestUrl, { headers }, (res) => {
@@ -372,9 +407,11 @@ export class ImageHandler {
 						reject(new Error(`HTTP ${res.statusCode}`));
 						return;
 					}
+					// 提取 Content-Type 用于后续扩展名修正 / Capture Content-Type for later extension correction
+					const contentType = res.headers['content-type'] ?? '';
 					const chunks: Buffer[] = [];
 					res.on('data', (chunk: Buffer) => chunks.push(chunk));
-					res.on('end', () => resolve(Buffer.concat(chunks)));
+					res.on('end', () => resolve({ buffer: Buffer.concat(chunks), contentType }));
 					res.on('error', reject);
 				});
 				req.on('error', reject);
@@ -391,7 +428,7 @@ export class ImageHandler {
 	 * 带重试的图片下载：15s 超时 + 1 次重试 + 1s 退避
 	 * Image download with retry: 15s timeout + 1 retry + 1s backoff
 	 */
-	private async downloadWithRetry(url: string, sourceUrl?: string): Promise<Buffer> {
+	private async downloadWithRetry(url: string, sourceUrl?: string): Promise<{ buffer: Buffer; contentType: string }> {
 		for (let attempt = 0; attempt <= 1; attempt++) {
 			try {
 				return await this.nodeHttpsGetBuffer(url, sourceUrl);
