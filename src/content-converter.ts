@@ -718,13 +718,34 @@ class ZhihuConverter implements ContentConverter {
 	 * 专栏预处理入口：所有专栏页 DOM 规范化在此方法内追加
 	 * Zhuanlan preprocessing entry: all zhuanlan DOM normalization appends here
 	 *
-	 * 当前仅包含代码块规范化。方法体刻意保持简洁——未来专栏特有的格式修复
-	 * （如图片、表格、特殊样式）均在此方法内追加，避免 convert() 膨胀。
-	 * Currently only code block normalization. The method is intentionally minimal —
-	 * future zhuanlan-specific fixes (images, tables, special styling) append here
-	 * to keep convert() lean.
+	 * 包含内容区域限定（移除编辑于后的广告/推荐）和代码块规范化。
+	 * 方法体刻意保持调度层——未来专栏特有的格式修复均在此方法内追加，
+	 * 每个修复项独立一个 private 方法，保持职责单一。
+	 * Includes content scoping (removing ads/recommendations after "编辑于")
+	 * and code block normalization. The method is intentionally a dispatch layer —
+	 * future zhuanlan-specific fixes append here, each as a focused private method
+	 * for single responsibility.
 	 */
 	private preprocessZhuanlan(doc: Document): void {
+		// 将 body 内容限定为专栏正文，移除尾部广告和推荐
+		// Scope body to article content, removing trailing ads and recommendations
+		const article = doc.querySelector('article.Post-Main');
+		if (article) {
+			// 找到 "编辑于" 元素，删除它及其后所有兄弟（话题标签、广告、社交栏）
+			// Find "编辑于" element, remove it and all following siblings (topics, ads, social bar)
+			const editTime = article.querySelector('.ContentItem-time');
+			if (editTime) {
+				let sibling: ChildNode | null = editTime.nextSibling;
+				while (sibling) {
+					const next: ChildNode | null = sibling.nextSibling;
+					sibling.remove();
+					sibling = next;
+				}
+			}
+			doc.body.innerHTML = '';
+			doc.body.appendChild(article);
+		}
+
 		this.normalizeTableCodeBlocks(doc);
 	}
 
