@@ -1,6 +1,6 @@
 /**
- * 图片/附件处理器：下载外链图片到本地 attachments 文件夹，替换为 wikilink
- * Image/Attachment handler: download external images to local attachments folder, replace with wikilinks
+ * 图片处理器：下载外链图片到本地 attachments 文件夹，替换为 wikilink
+ * Image handler: download external images to local attachments folder, replace with wikilinks
  *
  * 参考 ima-copilot-sync 的 ImageHandler 和 path-utils 实现
  * Based on ima-copilot-sync's ImageHandler and path-utils implementation
@@ -12,9 +12,6 @@ import { sanitizeFilename as sanitizeForFs } from './text-utils';
 
 /** 匹配 Markdown 图片语法 / Match Markdown image syntax */
 const IMG_URL_REGEX = /!\[([^\]]*)\]\((https?:\/\/[^)\s]+)\)/g;
-
-/** 匹配 Markdown 文件链接语法 / Match Markdown file link syntax */
-const FILE_URL_REGEX = /\[([^\]]*)\]\((https?:\/\/[^)\s]+)\)/g;
 
 /** 匹配 wikilink 格式 / Match wikilink format */
 const WIKILINK_REGEX = /\[\[([^\]]+)\]\]/;
@@ -80,11 +77,6 @@ function guessFileExtension(url: string): string {
 	if (lower.includes('.gif')) return '.gif';
 	if (lower.includes('.webp')) return '.webp';
 	if (lower.includes('.svg')) return '.svg';
-	if (lower.includes('.pdf')) return '.pdf';
-	if (lower.includes('.doc') || lower.includes('.docx')) return '.docx';
-	if (lower.includes('.ppt') || lower.includes('.pptx')) return '.pptx';
-	if (lower.includes('.xls') || lower.includes('.xlsx')) return '.xlsx';
-	if (lower.includes('.txt')) return '.txt';
 	return '';
 }
 
@@ -176,12 +168,12 @@ export class ImageHandler {
 	}
 
 	/**
-	 * 预处理：剥离 linked image/file 的外层 Markdown 链接。
+	 * 预处理：剥离 linked image 的外层 Markdown 链接。
 	 * defuddle 将 <a><img></a> 转为 [![alt](img-url)](link-url) 是完全合法的 Markdown，
 	 * 但图片下载后 wikilink 不支持嵌套在 markdown 链接中（[![[wikilink]](url) 无效），
-	 * 因此先扁平化为 ![alt](img-url) / [text](file-url)，后续管线统一处理。
+	 * 因此先扁平化为 ![alt](img-url)，后续管线统一处理。
 	 *
-	 * Pre-process: strip outer markdown link wrapper from linked images/files.
+	 * Pre-process: strip outer markdown link wrapper from linked images.
 	 * defuddle converts <a><img></a> → [![alt](img-url)](link-url) (valid Markdown),
 	 * but wikilinks can't be nested in markdown links after localization
 	 * ([![[wikilink]](url) is invalid). Flatten them first so downstream handles uniformly.
@@ -197,28 +189,21 @@ export class ImageHandler {
 			'$1',
 		);
 
-		// 链接文件：[...] 内恰好一个文件链接时，剥离外层链接
-		// Linked file: when [...] body is exactly one file link, strip outer link
-		markdown = markdown.replace(
-			/\[(\[[^\]]*\]\(https?:\/\/[^)\s]+\))\]\(https?:\/\/[^)\s]+\)/g,
-			'$1',
-		);
-
 		return markdown;
 	}
 
 	/**
-	 * 处理 markdown 内容中的外链图片和文件：
-	 * 1. 正则匹配 ![](url) 和 [text](url)
+	 * 处理 markdown 内容中的外链图片：
+	 * 1. 正则匹配 ![](url)
 	 * 2. 跳过已为 wikilink 格式的链接
 	 * 3. 下载到 {outputFolder}/attachments/
-	 * 4. 替换为 [[attachments/filename]] wikilink
+	 * 4. 替换为 ![[attachments/filename]] wikilink
 	 *
-	 * Process external images/files in markdown:
-	 * 1. Regex match ![](url) and [text](url)
+	 * Process external images in markdown:
+	 * 1. Regex match ![](url)
 	 * 2. Skip already-wikilink links
 	 * 3. Download to {outputFolder}/attachments/
-	 * 4. Replace with [[attachments/filename]] wikilinks
+	 * 4. Replace with ![[attachments/filename]] wikilinks
 	 */
 	async processContent(
 		markdown: string,
@@ -228,7 +213,7 @@ export class ImageHandler {
 		// 确保附件目录存在 / Ensure attachments directory exists
 		await this.ensureAttachmentsDir();
 
-		// 预处理：linked image/file 本地化后 wikilink 不支持嵌套在 markdown 链接中，
+		// 预处理：linked image 本地化后 wikilink 不支持嵌套在 markdown 链接中，
 		// 将 [![alt](img-url)](link-url) → ![alt](img-url)（丢弃外层链接 URL）
 		// Pre-processing: wikilink can't be nested in markdown links after localization,
 		// flatten [![alt](img-url)](link-url) → ![alt](img-url) (discard outer link URL)
@@ -238,11 +223,8 @@ export class ImageHandler {
 		// Batch dedup map: content hash → wikilink
 		const dedupMap = new Map<string, string>();
 
-		// 第一遍：处理图片 / First pass: images
+		// 下载外链图片并替换为 wikilink / Download external images and replace with wikilinks
 		markdown = await this.processMatches(markdown, IMG_URL_REGEX, noteTitle, dedupMap, sourceUrl);
-
-		// 第二遍：处理文件链接 / Second pass: file links
-		markdown = await this.processMatches(markdown, FILE_URL_REGEX, noteTitle, dedupMap, sourceUrl);
 
 		return markdown;
 	}
@@ -303,12 +285,6 @@ export class ImageHandler {
 		type DownloadResult = { full: string; url: string; buffer: Buffer; contentType: string } | { full: string; url: string; buffer: null };
 		// 回调内所有路径都 catch，不会抛异常，null 情况不会发生 / Callback catches all errors, null case impossible
 		const downloadResults = await this.withConcurrencyLimit(matches, 3, async (m) => {
-			// 非图片链接仅处理可识别文件扩展名的 URL，网页链接保持原样
-			// Non-image links: only process URLs with recognizable file extensions; web links stay as-is
-			const isImageRegex = regex.source === IMG_URL_REGEX.source;
-			if (!isImageRegex && !guessFileExtension(m.url)) {
-				return { full: m.full, url: m.url, buffer: null };
-			}
 			try {
 				const { buffer, contentType } = await this.downloadWithRetry(m.url, sourceUrl);
 				return { full: m.full, url: m.url, buffer, contentType };
