@@ -636,7 +636,7 @@ class ObsidianPublishConverter implements ContentConverter {
  * 从知乎问答页 DOM 中定位回答正文容器
  * Locate answer content container from Zhihu Q&A page DOM
  */
-function findAnswerContent(doc: Document): Element | null {
+export function findAnswerContent(doc: Document): Element | null {
 	// 知乎问答页回答正文在 span.RichText.ztext 中
 	// Zhihu answer body is in span.RichText.ztext
 	const selectors = [
