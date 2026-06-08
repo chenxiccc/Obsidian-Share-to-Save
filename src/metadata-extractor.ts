@@ -235,10 +235,11 @@ export class MetadataExtractor {
 				if (m?.[1]) {
 					const ts = parseInt(m[1], 10);
 					if (ts > 0) {
-						// 转换为 ISO 8601 日期字符串（北京时间 UTC+8）
-						// Convert to ISO 8601 date string (Beijing time UTC+8)
+						// Unix 时间戳 → 北京时间 (UTC+8) → YYYY-MM-DDTHH:mm:ss
+						// Unix timestamp → Beijing time (UTC+8) → YYYY-MM-DDTHH:mm:ss
 						const date = new Date(ts * 1000);
-						return date.toISOString().slice(0, 10);
+						const beijing = new Date(date.getTime() + 8 * 60 * 60 * 1000);
+						return beijing.toISOString().slice(0, 19);
 					}
 				}
 			}

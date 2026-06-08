@@ -455,6 +455,8 @@ interface XhsNote {
 	desc?: string | string[];
 	imageList?: XhsNoteImage[];
 	user?: XhsNoteUser;
+	time?: number;           // 发布时间，毫秒 Unix 时间戳 / Publish time, ms Unix timestamp
+	lastUpdateTime?: number; // 最后更新时间，毫秒 / Last update time, ms
 }
 
 interface XhsNoteDetailMap {
@@ -544,6 +546,18 @@ class XiaohongshuConverter implements ContentConverter {
 		const user = note.user;
 		if (user?.nickname) {
 			metadataPatch.author = user.nickname;
+		}
+
+		// published: __INITIAL_STATE__ note.time → 北京时间 → YYYY-MM-DDTHH:mm:ss
+		// published: __INITIAL_STATE__ note.time → Beijing time → YYYY-MM-DDTHH:mm:ss
+		if (note.time != null && note.time > 0) {
+			// 小红书时间戳为毫秒，转为北京时间 (UTC+8)
+			// XHS timestamp in milliseconds, convert to Beijing time (UTC+8)
+			const ms = note.time > 1e12 ? note.time : note.time * 1000;
+			const beijing = new Date(ms + 8 * 60 * 60 * 1000);
+			if (!isNaN(beijing.getTime())) {
+				metadataPatch.published = beijing.toISOString().slice(0, 19);
+			}
 		}
 
 		return {
@@ -691,6 +705,16 @@ class ZhihuConverter implements ContentConverter {
 			try { doc.querySelectorAll(sel).forEach(n => n.remove()); } catch { /* skip */ }
 		});
 
+		const metadataPatch: Partial<Metadata> = {};
+
+		// 在预处理前提取 .ContentItem-time（预处理会将其从原位移动或删除）
+		// Extract .ContentItem-time before preprocessing moves or removes it
+		const timeEl = doc.querySelector('.ContentItem-time');
+		if (timeEl?.textContent?.trim()) {
+			const parsed = ZhihuConverter.parseContentItemTime(timeEl.textContent.trim());
+			if (parsed) metadataPatch.published = parsed;
+		}
+
 		if (/zhuanlan\.zhihu\.com/.test(url)) {
 			this.preprocessZhuanlan(doc);
 		} else {
@@ -698,7 +722,10 @@ class ZhihuConverter implements ContentConverter {
 		}
 
 		const result = new Defuddle(doc, { url, markdown: true, useAsync: false }).parse();
-		return { markdown: result.content ?? '' };
+		return {
+			markdown: result.content ?? '',
+			metadataPatch: Object.keys(metadataPatch).length > 0 ? metadataPatch : undefined,
+		};
 	}
 
 	/**
@@ -793,6 +820,26 @@ class ZhihuConverter implements ContentConverter {
 	private isCodeLike(text: string): boolean {
 		return /^\s*(?:from\s+|import\s+|def\s+|class\s+|print\s*\(|#\s|if\s+|for\s+|while\s+|\w+\s*=\s*)/m.test(text)
 			|| (text.split('\n').length >= 3 && /[=){}[\]]/.test(text));
+	}
+
+	/**
+	 * 解析知乎 .ContentItem-time 文本 → YYYY-MM-DDTHH:mm:ss（北京时间），专栏和问答共用
+	 * Parse Zhihu .ContentItem-time text → YYYY-MM-DDTHH:mm:ss (Beijing time),
+	 * shared by zhuanlan and answer pages.
+	 *
+	 * 支持 / Supports:
+	 *   "发布于 2024-01-15 10:30"
+	 *   "编辑于 2026-01-15 21:48"
+	 *   "编辑于 2026-01-15 21:48・北京"
+	 */
+	private static parseContentItemTime(text: string): string | null {
+		const match = text.match(/(\d{4}-\d{2}-\d{2})\s*(\d{2}:\d{2})?/);
+		if (!match) return null;
+		const result = `${match[1]}T${match[2] ?? '00:00'}:00`;
+		// 用 +08:00 解析验证，确保日期合法（知乎为中国平台）
+		// Validate with +08:00 to ensure legal date (Zhihu is China-based)
+		const dt = new Date(result + '+08:00');
+		return isNaN(dt.getTime()) ? null : result;
 	}
 
 	// ─── 问答预处理 / Answer Preprocessing ──────────────────────────────────

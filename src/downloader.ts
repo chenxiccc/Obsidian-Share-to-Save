@@ -656,6 +656,15 @@ export class Downloader {
 	static formatDateTime(input: string): string | null {
 		if (!input) return null;
 		try {
+			// 已是 YYYY-MM-DDTHH:mm:ss 格式 → 验证后透传（converter 已输出源时区时间）
+			// Already final datetime format → validate and pass through
+			if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/.test(input)) {
+				const date = new Date(input);
+				return isNaN(date.getTime()) ? null : input;
+			}
+
+			// 其他格式 → UTC 规范化（通用 MetadataExtractor 管线）
+			// Other formats → UTC normalization (generic MetadataExtractor pipeline)
 			const date = new Date(input);
 			if (isNaN(date.getTime())) return null;
 			if (date.getUTCHours() === 0 && date.getUTCMinutes() === 0 && date.getUTCSeconds() === 0) {
