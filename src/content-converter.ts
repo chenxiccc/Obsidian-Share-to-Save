@@ -801,18 +801,29 @@ class ZhihuConverter implements ContentConverter {
 	 * 问答预处理入口：所有问答页 DOM 规范化在此方法内追加
 	 * Answer preprocessing entry: all answer page DOM normalization appends here
 	 *
-	 * 当前包含：内容区域限定 + 代码块规范化 + 懒加载图片修复。
-	 * 方法体刻意保持为入口调度层——未来问答特有的格式修复在此方法内追加，
+	 * 包含内容区域限定（编辑时间保留）+ 代码块规范化 + 懒加载图片修复。
+	 * 方法体刻意保持调度层——未来问答特有的格式修复在此方法内追加，
 	 * 每个修复项独立一个 private 方法，保持职责单一。
-	 * Currently: content scoping + code block normalization + lazy image fix.
-	 * The method is intentionally a dispatch layer — future answer-specific fixes
-	 * append here, each as a focused private method for single responsibility.
+	 * Includes content scoping (edit time preserved) + code block normalization
+	 * + lazy image fix. The method is intentionally a dispatch layer — future
+	 * answer-specific fixes append here, each as a focused private method.
 	 */
 	private preprocessAnswer(doc: Document): void {
 		// 将 body 内容替换为仅回答内容，避免知乎 UI 干扰 Defuddle 提取
 		// Replace body content with answer-only content to avoid Zhihu UI confusing Defuddle
 		const answerContent = findAnswerContent(doc);
 		if (answerContent) {
+			// 保存编辑时间：ContentItem-time 是 answerContent 的兄弟，会被 scoping 丢弃
+			// Defuddle 剥离尾部小文本，故必须在 scoping 前追加入 answerContent 内部
+			// Preserve edit time: ContentItem-time is a sibling that scoping discards.
+			// Defuddle strips trailing small text, so append inside answerContent before scoping.
+			const timeEl = doc.querySelector('.ContentItem-time');
+			if (timeEl && timeEl.textContent?.trim()) {
+				const timePara = doc.createElement('p');
+				timePara.textContent = timeEl.textContent.trim();
+				answerContent.appendChild(timePara);
+			}
+
 			doc.body.innerHTML = '';
 			doc.body.appendChild(answerContent);
 		}
