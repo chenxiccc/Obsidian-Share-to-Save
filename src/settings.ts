@@ -133,9 +133,10 @@ export class ShareToSaveSettingTab extends PluginSettingTab {
 		const iosCopyBtn = iosRow.createSpan({ cls: 'sts-shortcut-copy-btn' });
 		setIcon(iosCopyBtn, 'clipboard-copy');
 		iosCopyBtn.setAttribute('aria-label', this.t('settings.shortcut.copy'));
-		iosCopyBtn.addEventListener('click', async () => {
-			await navigator.clipboard.writeText('obsidian://share-to-save');
-			new Notice(this.t('settings.shortcut.copied'));
+		iosCopyBtn.addEventListener('click', () => {
+			void navigator.clipboard.writeText('obsidian://share-to-save').then(() => {
+				new Notice(this.t('settings.shortcut.copied'));
+			});
 		});
 
 		// ── Android ──
@@ -167,9 +168,10 @@ export class ShareToSaveSettingTab extends PluginSettingTab {
 			const copyBtn = row.createSpan({ cls: 'sts-shortcut-copy-btn' });
 			setIcon(copyBtn, 'clipboard-copy');
 			copyBtn.setAttribute('aria-label', this.t('settings.shortcut.copy'));
-			copyBtn.addEventListener('click', async () => {
-				await navigator.clipboard.writeText(field.value);
-				new Notice(this.t('settings.shortcut.copied'));
+			copyBtn.addEventListener('click', () => {
+				void navigator.clipboard.writeText(field.value).then(() => {
+					new Notice(this.t('settings.shortcut.copied'));
+				});
 			});
 		}
 	}

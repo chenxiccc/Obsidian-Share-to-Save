@@ -60,7 +60,7 @@ export class InputModal extends Modal {
 		}
 		// 自动聚焦 + 软键盘（移动端）/ Auto-focus + soft keyboard (mobile)
 		// RAF 确保 DOM 渲染完成后再聚焦 / RAF ensures DOM is painted before focus
-		requestAnimationFrame(() => {
+		window.requestAnimationFrame(() => {
 			window.setTimeout(() => {
 				textareaEl.focus();
 			}, 100);
