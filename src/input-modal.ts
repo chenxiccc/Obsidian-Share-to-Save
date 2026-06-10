@@ -1,20 +1,21 @@
 /**
- * URL 输入模态框：用户粘贴分享文本，校验 URL 格式后写入队列并立即处理
- * URL input modal: user pastes share text, validates URL format, then processes
+ * 输入模态框：用户粘贴文本，可选择"保存文字"或"保存网页"
+ * Input modal: user pastes text, choose "Save Text" or "Save Webpage"
  */
 
 import { Modal, App, setIcon } from 'obsidian';
 import type { Translator } from './i18n';
 import { extractUrl, isValidUrl } from './url-extractor';
 
-export class UrlInputModal extends Modal {
+export class InputModal extends Modal {
 	private textarea!: HTMLTextAreaElement;
 	private errorEl!: HTMLElement;
 
 	constructor(
 		app: App,
 		private t: Translator,
-		private onSave: (text: string) => Promise<void>,
+		private onSaveText: (text: string) => Promise<void>,
+		private onSaveUrl: (text: string) => Promise<void>,
 		private initialText: string = '',
 		private onCloseCallback?: () => void,
 	) {
@@ -24,7 +25,7 @@ export class UrlInputModal extends Modal {
 	onOpen(): void {
 		const { contentEl, titleEl } = this;
 		contentEl.empty();
-		contentEl.addClass('sts-url-input-modal');
+		contentEl.addClass('sts-input-modal');
 
 		// ── 标题 / Title ──
 		titleEl.empty();
@@ -48,7 +49,7 @@ export class UrlInputModal extends Modal {
 				placeholder: this.t('modal.placeholder'),
 				rows: '4',
 			},
-			cls: 'sts-url-textarea',
+			cls: 'sts-input-textarea',
 		});
 		this.textarea = textareaEl;
 
@@ -58,16 +59,23 @@ export class UrlInputModal extends Modal {
 		window.setTimeout(() => textareaEl.focus(), 50);
 
 		// ── 错误提示 / Error hint ──
-		this.errorEl = contentEl.createDiv({ cls: 'sts-url-error' });
+		this.errorEl = contentEl.createDiv({ cls: 'sts-input-error' });
 		this.errorEl.addClass('sts-hidden');
 
-		// ── 底部按钮 / Bottom button ──
+		// ── 底部按钮 / Bottom buttons ──
 		const buttonRow = contentEl.createDiv({ cls: 'sts-button-row' });
-		const saveBtn = buttonRow.createDiv({ cls: 'sts-save-btn' });
-		saveBtn.setText(this.t('modal.saveNow'));
-		saveBtn.addEventListener('click', () => { void this.handleSubmit(); });
 
-		// Enter 提交 / Enter to submit
+		// 保存文字（左，次要按钮）/ Save Text (left, secondary button)
+		const textBtn = buttonRow.createDiv({ cls: 'sts-save-btn sts-save-text-btn' });
+		textBtn.setText(this.t('modal.saveText'));
+		textBtn.addEventListener('click', () => { void this.handleSaveText(); });
+
+		// 保存网页（右，主按钮）/ Save Webpage (right, primary button)
+		const urlBtn = buttonRow.createDiv({ cls: 'sts-save-btn sts-save-url-btn' });
+		urlBtn.setText(this.t('modal.saveWebpage'));
+		urlBtn.addEventListener('click', () => { void this.handleSubmit(); });
+
+		// Enter 提交 → 保存网页 / Enter submits → Save Webpage
 		textareaEl.addEventListener('keydown', (e: KeyboardEvent) => {
 			if (e.key === 'Enter' && !e.shiftKey) {
 				e.preventDefault();
@@ -77,7 +85,23 @@ export class UrlInputModal extends Modal {
 	}
 
 	/**
-	 * 校验 + 提交 / Validate + submit
+	 * 保存文字：无需校验 URL，直接保存文本内容
+	 * Save text: no URL validation, save text directly
+	 */
+	private async handleSaveText(): Promise<void> {
+		const text = this.textarea.value.trim();
+		if (!text) {
+			this.close();
+			return;
+		}
+		this.errorEl.addClass('sts-hidden');
+		this.close();
+		await this.onSaveText(text);
+	}
+
+	/**
+	 * 保存网页：校验 URL 格式后提交
+	 * Save webpage: validate URL format then submit
 	 *
 	 * 逐行处理：无 URL 的行静默跳过，提取到 URL 但格式无效则报错阻断
 	 * Per-line: silently skip lines without URLs, error only when URL found but invalid
@@ -112,7 +136,7 @@ export class UrlInputModal extends Modal {
 
 		this.errorEl.addClass('sts-hidden');
 		this.close();
-		await this.onSave(text);
+		await this.onSaveUrl(text);
 	}
 
 	onClose(): void {

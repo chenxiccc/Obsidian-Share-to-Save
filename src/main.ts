@@ -19,7 +19,8 @@ import { QueueManager } from './queue-manager';
 import { Downloader } from './downloader';
 import { FileWatcher } from './file-watcher';
 import { ShareMenuInjector } from './share-menu-injector';
-import { UrlInputModal } from './url-input-modal';
+import { InputModal } from './input-modal';
+import { TextSaver } from './text-saver';
 
 export default class ShareToSavePlugin extends Plugin {
 	settings!: ShareToSaveSettings;
@@ -29,7 +30,8 @@ export default class ShareToSavePlugin extends Plugin {
 	private fileWatcher!: FileWatcher;
 	private shareMenuInjector!: ShareMenuInjector;
 	private ribbonIconEl!: HTMLElement;
-	private isUrlModalOpen = false;
+	private textSaver!: TextSaver;
+	private isInputModalOpen = false;
 
 	async onload(): Promise<void> {
 		// ── 加载设置 / Load settings ──
@@ -46,8 +48,12 @@ export default class ShareToSavePlugin extends Plugin {
 			this.app.metadataCache,
 		);
 
+		// ── 初始化文字保存器 / Initialize text saver ──
+		this.textSaver = new TextSaver(this.app.vault, this.settings.outputFolder);
+
 		// ── 初始化分享菜单注入器（移动端）/ Initialize share menu injector (mobile) ──
 		this.shareMenuInjector = new ShareMenuInjector(
+			(text) => this.handleTextSave(text),
 			(url) => this.handleSharedUrl(url),
 			this.t,
 		);
@@ -80,7 +86,7 @@ export default class ShareToSavePlugin extends Plugin {
 
 		// ── Ribbon 按钮（全平台）/ Ribbon button (all platforms) ──
 		this.ribbonIconEl = this.addRibbonIcon('cloud-download', this.t('ribbon.tooltip'), async () => {
-			await this.openUrlModal();
+			await this.openInputModal();
 		});
 
 		// ── 命令（全平台）/ Command (all platforms) ──
@@ -88,7 +94,7 @@ export default class ShareToSavePlugin extends Plugin {
 			id: 'save-url',
 			name: this.t('ribbon.tooltip'),
 			callback: async () => {
-				await this.openUrlModal();
+				await this.openInputModal();
 			},
 		});
 
@@ -96,7 +102,7 @@ export default class ShareToSavePlugin extends Plugin {
 		// 支持 obsidian://share-to-save 快速唤起 URL 输入框（Android 桌面快捷方式等）
 		// Supports obsidian://share-to-save to quickly open the URL input modal (Android shortcuts, etc.)
 		this.registerObsidianProtocolHandler('share-to-save', async () => {
-			await this.openUrlModal();
+			await this.openInputModal();
 		});
 
 		// ── 设置页 / Settings tab ──
@@ -137,8 +143,23 @@ export default class ShareToSavePlugin extends Plugin {
 	}
 
 	/**
-	 * 处理 UrlInputModal 的提交（支持多 URL，逐一入队后立即处理）
-	 * Handle submission from UrlInputModal (supports multiple URLs, enqueue then process)
+	 * 保存文字到 Share-to-Save.md（非 URL，不进入下载队列）
+	 * Save text to Share-to-Save.md (non-URL, bypasses download queue)
+	 */
+	private async handleTextSave(text: string): Promise<void> {
+		try {
+			await this.textSaver.save(text);
+			new Notice(this.t('notice.textSaved'));
+		} catch (err) {
+			const errMsg = err instanceof Error ? err.message : String(err);
+			console.error('Share to Save: 保存文字失败 / Text save failed:', errMsg);
+			new Notice(`保存文字失败 / Text save failed: ${errMsg}`);
+		}
+	}
+
+	/**
+	 * 处理 InputModal 的提交（支持多 URL，逐一入队后立即处理）
+	 * Handle submission from InputModal (supports multiple URLs, enqueue then process)
 	 *
 	 * @param text 用户输入的文本 / User input text
 	 */
@@ -170,29 +191,30 @@ export default class ShareToSavePlugin extends Plugin {
 	}
 
 	/**
-	 * 打开 URL 输入模态框 / Open URL input modal
+	 * 打开 输入模态框 / Open input modal
 	 *
-	 * 桌面端存在 pending 条目时预填 URL，点击"立即保存"直接触发处理
+	 * 桌面端存在 pending 条目时预填 URL，点击"保存网页"直接触发处理
 	 * On desktop, pre-fill pending URLs and trigger processing directly on submit
 	 */
-	private async openUrlModal(): Promise<void> {
+	private async openInputModal(): Promise<void> {
 		// 防重入守卫：如果已有输入框打开则跳过 / Re-entry guard: skip if modal already open
-		if (this.isUrlModalOpen) return;
+		if (this.isInputModalOpen) return;
 
 		// 桌面端：检查是否有待处理的队列条目 / Desktop: check for pending queue entries
 		if (Platform.isDesktop) {
 			const pendingEntries = await this.queueManager.getPendingEntries();
 			if (pendingEntries.length > 0) {
 				const urls = pendingEntries.map(e => e.url).join('\n');
-				this.isUrlModalOpen = true;
-				new UrlInputModal(
+				this.isInputModalOpen = true;
+				new InputModal(
 					this.app,
 					this.t,
+					(text) => this.handleTextSave(text),
 					async () => {
 						await this.fileWatcher?.processNow();
 					},
 					urls,
-					() => { this.isUrlModalOpen = false; },
+					() => { this.isInputModalOpen = false; },
 				).open();
 				return;
 			}
@@ -200,8 +222,8 @@ export default class ShareToSavePlugin extends Plugin {
 
 		// 无 pending 条目时使用原有流程（提取 URL → 入队 → 处理）
 		// Use existing flow when no pending entries (extract URL → enqueue → process)
-		this.isUrlModalOpen = true;
-		new UrlInputModal(this.app, this.t, (text) => this.handleUrlInput(text), '', () => { this.isUrlModalOpen = false; }).open();
+		this.isInputModalOpen = true;
+		new InputModal(this.app, this.t, (text) => this.handleTextSave(text), (text) => this.handleUrlInput(text), '', () => { this.isInputModalOpen = false; }).open();
 	}
 
 	// ─── 设置管理 / Settings management ────────────────────────────────────

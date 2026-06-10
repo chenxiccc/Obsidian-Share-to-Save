@@ -17,16 +17,20 @@ export const STRINGS: Record<string, { zh: string; en: string }> = {
 		en: 'Share to Save: Save URL',
 	},
 	'modal.title': {
-		zh: '保存链接',
-		en: 'Save URL',
+		zh: '保存内容',
+		en: 'Save Content',
 	},
 	'modal.placeholder': {
-		zh: '每行一个网址，可粘贴含文字的分享文本...',
-		en: 'One URL per line, or paste share text with letters...',
+		zh: '如要保存网页内容，需每行一个网址，可粘贴含文字的分享文本。',
+		en: 'To save webpages, enter one URL per line. You can paste share text containing URLs.',
 	},
-	'modal.saveNow': {
-		zh: '立即保存',
-		en: 'Save now',
+	'modal.saveWebpage': {
+		zh: '保存网页↵',
+		en: 'Save Webpage↵',
+	},
+	'modal.saveText': {
+		zh: '保存文字',
+		en: 'Save Text',
 	},
 	'modal.invalidUrl': {
 		zh: '第 ${line} 行链接格式无效: ${url}',
@@ -36,9 +40,13 @@ export const STRINGS: Record<string, { zh: string; en: string }> = {
 		zh: '打开插件设置',
 		en: 'Open plugin settings',
 	},
-	'menu.button': {
-		zh: '保存到 Share to Save',
-		en: 'Save to Share to Save',
+	'menu.saveText': {
+		zh: '保存文字',
+		en: 'Save Text',
+	},
+	'menu.saveWebpage': {
+		zh: '保存网页',
+		en: 'Save Webpage',
 	},
 	'settings.folder.name': {
 		zh: '保存文件夹',
@@ -117,6 +125,10 @@ export const STRINGS: Record<string, { zh: string; en: string }> = {
 	'notice.savedMultiple': {
 		zh: '已保存 ${count} 个链接到队列',
 		en: 'Saved ${count} URLs to queue',
+	},
+	'notice.textSaved': {
+		zh: '已保存文字',
+		en: 'Text saved',
 	},
 	'notice.savedTitle': {
 		zh: '已保存: ${title}',

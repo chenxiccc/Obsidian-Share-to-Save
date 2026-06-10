@@ -5,7 +5,7 @@
 
 /* ── URL 输入模态框 / URL input modal ── */
 
-.sts-url-input-modal {
+.sts-input-modal {
 	max-width: 520px;
 }
 
@@ -32,7 +32,7 @@
 
 /* ── 输入区 / Input area ── */
 
-.sts-url-input-modal textarea.sts-url-textarea {
+.sts-input-modal textarea.sts-input-textarea {
 	width: 100%;
 	min-height: 60px;
 	font-family: var(--font-monospace);
@@ -47,18 +47,18 @@
 	box-sizing: border-box;
 }
 
-.sts-url-input-modal textarea.sts-url-textarea:focus {
+.sts-input-modal textarea.sts-input-textarea:focus {
 	border-color: var(--interactive-accent);
 	box-shadow: 0 0 0 2px rgba(var(--interactive-accent-rgb), 0.15);
 }
 
-.sts-url-input-modal textarea.sts-url-textarea::placeholder {
+.sts-input-modal textarea.sts-input-textarea::placeholder {
 	color: var(--text-faint);
 }
 
 /* ── 错误提示 / Error hint ── */
 
-.sts-url-input-modal .sts-url-error {
+.sts-input-modal .sts-input-error {
 	color: var(--text-error);
 	font-size: 0.85em;
 	margin-top: 8px;
@@ -68,7 +68,7 @@
 
 /* ── 底部按钮 / Bottom button row ── */
 
-.sts-url-input-modal .sts-button-row {
+.sts-input-modal .sts-button-row {
 	display: flex;
 	align-items: center;
 	justify-content: center;
@@ -76,7 +76,7 @@
 	margin-top: 20px;
 }
 
-.sts-url-input-modal .sts-save-btn {
+.sts-input-modal .sts-save-btn {
 	padding: 8px 40px;
 	font-size: 0.95em;
 	font-weight: 500;
@@ -88,21 +88,37 @@
 	user-select: none;
 }
 
-.sts-url-input-modal .sts-save-btn:hover {
+.sts-input-modal .sts-save-btn:hover {
 	background-color: var(--interactive-accent-hover);
+	box-shadow: 0 2px 8px rgba(var(--interactive-accent-rgb), 0.25);
+}
+
+/* ── 保存文字次要按钮（outline 风格，左）/ Save Text secondary button (outline, left) ── */
+
+.sts-input-modal .sts-save-text-btn {
+	background-color: transparent;
+	color: var(--interactive-accent);
+	border: 2px solid var(--interactive-accent);
+	padding: 6px 38px;
+}
+
+.sts-input-modal .sts-save-text-btn:hover {
+	background-color: var(--interactive-accent);
+	color: var(--text-on-accent);
 	box-shadow: 0 2px 8px rgba(var(--interactive-accent-rgb), 0.25);
 }
 
 /* ── 分享菜单注入按钮（移动端）/ Share menu injected button (mobile) ── */
 
-.share-to-save-action {
+.share-to-save-text-action,
+.share-to-save-url-action {
 	/* 复用 Obsidian 原生 .menu-item 样式，无需额外样式 */
 	/* Reuses Obsidian native .menu-item styles, no additional styles needed */
 }
 
 /* ── 工具类 / Utility classes ── */
 
-.sts-url-error.sts-hidden {
+.sts-input-error.sts-hidden {
 	display: none;
 }
 
