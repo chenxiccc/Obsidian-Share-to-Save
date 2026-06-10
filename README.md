@@ -6,9 +6,11 @@
 
 An Obsidian plugin that automatically downloads web pages as Markdown notes, with quick text note capture.
 
-**1. Save web pages: Share / Add links from mobile** → **Auto-download on desktop** → **Save to your vault**
-**2. Save text: Type text in the plugin input and save**
-**3. Quick capture: Desktop shortcut for one-tap access to the input, see [Add to Home Screen](#add-to-home-screen) below**
+**1. Save web pages:** Share / Add links from mobile → Auto-download on desktop → Save to your vault
+
+**2. Save text:** Type text in the plugin input and save
+
+**3. Quick capture:** Home screen shortcut for one-tap access to the input, see [Add to Home Screen](#add-to-home-screen) below
 
 ## Typical Usage
 
@@ -90,9 +92,11 @@ MIT
 
 Share to Save 是一款 Obsidian 插件，将网页自动下载为 Markdown 笔记，也可以快速记录闪念文字。
 
-**1. 保存网页完整内容：手机端分享 / 添加链接** → **桌面端自动下载** → **保存到你的知识库**
-**2. 保存文字：插件输入框里输入文字，保存** 
-**3. 闪念速记：桌面快捷方式一键直达输入框，见下方[创建桌面快捷方式](#创建手机桌面快捷方式-一键直达输入框闪念速记)**
+**1. 保存网页完整内容：** 手机端分享 / 添加链接 → 桌面端自动下载 → 保存到你的知识库
+
+**2. 保存文字：** 插件输入框里输入文字，保存
+
+**3. 闪念速记：** 桌面快捷方式一键直达输入框，见下方[创建桌面快捷方式](#创建手机桌面快捷方式-一键直达输入框闪念速记)
 
 ## 典型用法
 
