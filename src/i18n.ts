@@ -25,8 +25,8 @@ export const STRINGS: Record<string, { zh: string; en: string }> = {
 		en: 'To save webpages, enter one URL per line. You can paste share text containing URLs.',
 	},
 	'modal.saveWebpage': {
-		zh: '保存网页↵',
-		en: 'Save Webpage↵',
+		zh: '保存网页',
+		en: 'Save Webpage',
 	},
 	'modal.saveText': {
 		zh: '保存文字',

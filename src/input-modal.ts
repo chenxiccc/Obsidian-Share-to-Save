@@ -56,7 +56,18 @@ export class InputModal extends Modal {
 		if (this.initialText) {
 			textareaEl.value = this.initialText;
 		}
-		window.setTimeout(() => textareaEl.focus(), 50);
+		// 自动聚焦 + 软键盘（移动端）/ Auto-focus + soft keyboard (mobile)
+		// RAF 确保 DOM 渲染完成后再聚焦 / RAF ensures DOM is painted before focus
+		requestAnimationFrame(() => {
+			window.setTimeout(() => {
+				textareaEl.focus();
+			}, 100);
+		});
+
+		// ── 剪贴板自动填充（仅当无初始文本时）/ Clipboard auto-fill (only when no initial text) ──
+		if (!this.initialText) {
+			void this.tryFillFromClipboard();
+		}
 
 		// ── 错误提示 / Error hint ──
 		this.errorEl = contentEl.createDiv({ cls: 'sts-input-error' });
@@ -75,13 +86,6 @@ export class InputModal extends Modal {
 		urlBtn.setText(this.t('modal.saveWebpage'));
 		urlBtn.addEventListener('click', () => { void this.handleSubmit(); });
 
-		// Enter 提交 → 保存网页 / Enter submits → Save Webpage
-		textareaEl.addEventListener('keydown', (e: KeyboardEvent) => {
-			if (e.key === 'Enter' && !e.shiftKey) {
-				e.preventDefault();
-				void this.handleSubmit();
-			}
-		});
 	}
 
 	/**
@@ -137,6 +141,26 @@ export class InputModal extends Modal {
 		this.errorEl.addClass('sts-hidden');
 		this.close();
 		await this.onSaveUrl(text);
+	}
+
+	/**
+	 * 尝试从剪贴板自动填充（仅弹窗打开时触发一次）
+	 * Attempt to auto-fill from clipboard (triggers once on modal open)
+	 *
+	 * 静默失败，不阻塞弹窗 / Silent failure, non-blocking
+	 */
+	private async tryFillFromClipboard(): Promise<void> {
+		try {
+			if (!navigator.clipboard?.readText) return;
+			const text = await navigator.clipboard.readText();
+			// 仅当输入框仍为空时填充（避免覆盖用户已输入内容）
+			// Only fill if textarea is still empty (avoid overwriting user input)
+			if (text?.trim() && !this.textarea.value.trim()) {
+				this.textarea.value = text.trim();
+			}
+		} catch {
+			// 静默忽略 / Silently ignore
+		}
 	}
 
 	onClose(): void {
