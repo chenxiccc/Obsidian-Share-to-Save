@@ -22,7 +22,7 @@ export const STRINGS: Record<string, { zh: string; en: string }> = {
 	},
 	'modal.placeholder': {
 		zh: '如要保存网页内容，需每行一个网址，可粘贴含文字的分享文本。',
-		en: 'To save webpages, enter one URL per line. You can paste share text containing URLs.',
+		en: 'To save webpages, enter one URL per line. You can paste shared text containing URLs.',
 	},
 	'modal.saveWebpage': {
 		zh: '保存网页',
@@ -62,7 +62,7 @@ export const STRINGS: Record<string, { zh: string; en: string }> = {
 	},
 	'settings.folder.illegalChars': {
 		zh: '文件夹名含非法字符，仅允许字母、数字、空格、-、_、.、/',
-		en: 'Folder name contains illegal characters. Only letters, numbers, spaces, -, _, ., / are allowed',
+		en: 'Folder name contains invalid characters. Only letters, numbers, spaces, -, _, ., / are allowed',
 	},
 	'settings.folder.consecutiveSlashes': {
 		zh: '文件夹名不允许连续斜杠 //',
@@ -82,11 +82,11 @@ export const STRINGS: Record<string, { zh: string; en: string }> = {
 	},
 	'settings.usage.heading': {
 		zh: '使用说明',
-		en: 'Usage Instructions',
+		en: 'Instructions',
 	},
 	'settings.usage.content': {
 		zh: '请使用任意同步方式，推荐 ${link}，在手机和电脑间同步该文件夹，手机和电脑需使用相同文件夹。电脑端接收到新队列文件后，会自动开始获取网页内容。',
-		en: 'Use any sync method, recommends ${link}, to sync this folder between mobile and desktop. Both devices must use the same folder. Desktop will automatically extract content when new queue files are received.',
+		en: 'Use any sync method to sync this folder between mobile and desktop. We recommend ${link}. Both devices must use the same folder name. Desktop will automatically download web content when new queue files arrive.',
 	},
 	'settings.pollInterval.name': {
 		zh: '检测间隔',
@@ -94,7 +94,7 @@ export const STRINGS: Record<string, { zh: string; en: string }> = {
 	},
 	'settings.pollInterval.desc': {
 		zh: '电脑端检测队列目录中是否有新条目的间隔。建议 >= 5 秒。',
-		en: 'How often desktop checks for new entries in the queue directory. Recommend >= 5 seconds.',
+		en: 'How often the desktop checks the queue directory for new entries. Recommend >= 5 seconds.',
 	},
 	'settings.pollInterval.seconds': {
 		zh: '秒',
@@ -107,6 +107,55 @@ export const STRINGS: Record<string, { zh: string; en: string }> = {
 	'settings.pollInterval.hours': {
 		zh: '小时',
 		en: 'hours',
+	},
+
+	'settings.shortcut.heading': {
+		zh: '添加桌面快捷方式：从主屏幕一键直达插件输入框',
+		en: 'Add to Home Screen: One-tap access to the plugin input from your home screen',
+	},
+	'settings.shortcut.ios.heading': {
+		zh: 'iOS 创建桌面快捷方式',
+		en: 'iOS: Add to Home Screen',
+	},
+	'settings.shortcut.ios.desc': {
+		zh: '打开快捷指令 App → 新建快捷指令 → 添加操作「打开 URL」→ 填入下方链接 → 点分享按钮 → 添加到主屏幕',
+		en: 'Open Shortcuts app → New Shortcut → Add Action "Open URL" → Fill in the link below → Tap Share → Add to Home Screen',
+	},
+	'settings.shortcut.ios.uriLabel': {
+		zh: 'URL',
+		en: 'URL',
+	},
+	'settings.shortcut.android.heading': {
+		zh: 'Android 创建桌面快捷方式',
+		en: 'Android: Add to Home Screen',
+	},
+	'settings.shortcut.android.desc': {
+		zh: '使用 ${link} 新建一个 Intent（意图）并填写以下四个参数：',
+		en: 'Use ${link} to create a new Intent and fill in the four parameters below:',
+	},
+	'settings.shortcut.action': {
+		zh: '操作',
+		en: 'Action',
+	},
+	'settings.shortcut.package': {
+		zh: '程序包名称',
+		en: 'Package',
+	},
+	'settings.shortcut.class': {
+		zh: '类名',
+		en: 'Class',
+	},
+	'settings.shortcut.data': {
+		zh: '数据',
+		en: 'Data URI',
+	},
+	'settings.shortcut.copy': {
+		zh: '复制',
+		en: 'Copy',
+	},
+	'settings.shortcut.copied': {
+		zh: '已复制到剪贴板',
+		en: 'Copied to clipboard',
 	},
 
 	'failed.body': {

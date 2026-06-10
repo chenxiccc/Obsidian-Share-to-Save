@@ -2,7 +2,7 @@
  * 插件设置 / Plugin settings
  */
 
-import { PluginSettingTab, Setting, App, Notice, requestUrl } from 'obsidian';
+import { PluginSettingTab, Setting, App, Notice, requestUrl, setIcon, Platform } from 'obsidian';
 import type ShareToSavePlugin from './main';
 import type { ShareToSaveSettings, PollIntervalUnit } from './types';
 import type { Translator } from './i18n';
@@ -39,9 +39,8 @@ export class ShareToSaveSettingTab extends PluginSettingTab {
 // ── 使用说明 / Usage Instructions ──
 		const usageBox = containerEl.createDiv({ cls: 'sts-usage-box' });
 
-		new Setting(usageBox)
-			.setName(this.t('settings.usage.heading'))
-			.setHeading();
+		const usageHeading = usageBox.createDiv({ cls: 'sts-usage-heading' });
+		usageHeading.setText(this.t('settings.usage.heading'));
 
 		const descEl = usageBox.createDiv({ cls: 'setting-item-description' });
 		// 链接文本 / Link text
@@ -85,7 +84,8 @@ export class ShareToSaveSettingTab extends PluginSettingTab {
 					})
 			);
 
-// ── 轮询间隔 / Polling interval ──
+// ── 轮询间隔（仅桌面端）/ Polling interval (desktop only) ──
+	if (Platform.isDesktop) {
 		new Setting(containerEl)
 			.setName(this.t('settings.pollInterval.name'))
 			.setDesc(this.t('settings.pollInterval.desc'))
@@ -112,6 +112,66 @@ export class ShareToSaveSettingTab extends PluginSettingTab {
 						await this.plugin.saveSettings();
 					})
 			);
+	}
+
+	// ── 添加桌面快捷方式 / Add to Home Screen ──
+		const shortcutBox = containerEl.createDiv({ cls: 'sts-shortcut-box' });
+
+		// 大标题 / Main heading
+		const headingEl = shortcutBox.createDiv({ cls: 'sts-shortcut-heading' });
+		headingEl.setText(this.t('settings.shortcut.heading'));
+
+		// ── iOS ──
+		const iosSection = shortcutBox.createDiv({ cls: 'sts-shortcut-section' });
+		const iosHeading = iosSection.createDiv({ cls: 'sts-shortcut-subheading' });
+		iosHeading.setText(this.t('settings.shortcut.ios.heading'));
+		const iosDesc = iosSection.createDiv({ cls: 'setting-item-description' });
+		iosDesc.setText(this.t('settings.shortcut.ios.desc'));
+		const iosRow = iosSection.createDiv({ cls: 'sts-shortcut-row' });
+		iosRow.createSpan({ cls: 'sts-shortcut-label', text: this.t('settings.shortcut.ios.uriLabel') });
+		iosRow.createSpan({ cls: 'sts-shortcut-value', text: 'obsidian://share-to-save' });
+		const iosCopyBtn = iosRow.createSpan({ cls: 'sts-shortcut-copy-btn' });
+		setIcon(iosCopyBtn, 'clipboard-copy');
+		iosCopyBtn.setAttribute('aria-label', this.t('settings.shortcut.copy'));
+		iosCopyBtn.addEventListener('click', async () => {
+			await navigator.clipboard.writeText('obsidian://share-to-save');
+			new Notice(this.t('settings.shortcut.copied'));
+		});
+
+		// ── Android ──
+		const androidSection = shortcutBox.createDiv({ cls: 'sts-shortcut-section' });
+		const androidHeading = androidSection.createDiv({ cls: 'sts-shortcut-subheading' });
+		androidHeading.setText(this.t('settings.shortcut.android.heading'));
+		const androidDesc = androidSection.createDiv({ cls: 'setting-item-description' });
+		const shortcutLinkText = 'Shortcut Maker';
+		const shortcutLinkHref = 'https://play.google.com/store/apps/details?id=rk.android.app.shortcutmaker';
+		const androidDescContent = this.t('settings.shortcut.android.desc', { link: shortcutLinkText });
+		const androidDescLinkIdx = androidDescContent.indexOf(shortcutLinkText);
+		if (androidDescLinkIdx >= 0) {
+			androidDesc.createSpan({ text: androidDescContent.slice(0, androidDescLinkIdx) });
+			androidDesc.createEl('a', { href: shortcutLinkHref, text: shortcutLinkText });
+			androidDesc.createSpan({ text: androidDescContent.slice(androidDescLinkIdx + shortcutLinkText.length) });
+		} else {
+			androidDesc.setText(androidDescContent);
+		}
+		const shortcutFields = [
+			{ labelKey: 'settings.shortcut.action', value: 'android.intent.action.VIEW' },
+			{ labelKey: 'settings.shortcut.package', value: 'md.obsidian' },
+			{ labelKey: 'settings.shortcut.class', value: 'md.obsidian.MainActivity' },
+			{ labelKey: 'settings.shortcut.data', value: 'obsidian://share-to-save' },
+		];
+		for (const field of shortcutFields) {
+			const row = androidSection.createDiv({ cls: 'sts-shortcut-row' });
+			row.createSpan({ cls: 'sts-shortcut-label', text: this.t(field.labelKey) });
+			row.createSpan({ cls: 'sts-shortcut-value', text: field.value });
+			const copyBtn = row.createSpan({ cls: 'sts-shortcut-copy-btn' });
+			setIcon(copyBtn, 'clipboard-copy');
+			copyBtn.setAttribute('aria-label', this.t('settings.shortcut.copy'));
+			copyBtn.addEventListener('click', async () => {
+				await navigator.clipboard.writeText(field.value);
+				new Notice(this.t('settings.shortcut.copied'));
+			});
+		}
 	}
 
 	/**

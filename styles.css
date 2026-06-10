@@ -72,18 +72,20 @@
 	display: flex;
 	align-items: center;
 	justify-content: center;
+	flex-wrap: nowrap;
 	gap: 12px;
 	margin-top: 20px;
 }
 
 .sts-input-modal .sts-save-btn {
-	padding: 8px 40px;
+	padding: 8px 24px;
 	font-size: 0.95em;
 	font-weight: 500;
 	border-radius: 6px;
 	background-color: var(--interactive-accent);
 	color: var(--text-on-accent);
 	cursor: pointer;
+	white-space: nowrap;
 	transition: background-color 0.15s, box-shadow 0.15s;
 	user-select: none;
 }
@@ -99,7 +101,7 @@
 	background-color: transparent;
 	color: var(--interactive-accent);
 	border: 2px solid var(--interactive-accent);
-	padding: 6px 38px;
+	padding: 6px 22px;
 }
 
 .sts-input-modal .sts-save-text-btn:hover {
@@ -154,15 +156,87 @@
 	margin-bottom: 24px;
 }
 
-/* 覆盖 Obsidian 默认间距 / Override Obsidian default spacing */
-.sts-usage-box .setting-item {
-	border-top: none;
-	padding: 0;
-	margin-top: 0;
+.sts-usage-heading {
+	font-weight: 700;
+	font-size: 1.05em;
+	color: var(--text-normal);
+	margin-bottom: 8px;
 }
 
-.sts-usage-box .setting-item.setting-item-heading {
-	padding-left: 0;
-	margin-top: 0;
-	margin-bottom: 4px;
+/* ── 设置页桌面快捷方式卡片 / Settings page desktop shortcut card ── */
+
+.sts-shortcut-box {
+	background: var(--background-secondary);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-m, 8px);
+	padding: 20px;
+	margin-top: 24px;
+	margin-bottom: 24px;
+}
+
+.sts-shortcut-heading {
+	font-weight: 700;
+	font-size: 1.05em;
+	color: var(--text-normal);
+	margin-bottom: 16px;
+}
+
+.sts-shortcut-subheading {
+	font-weight: 700;
+	color: var(--text-normal);
+	margin-bottom: 6px;
+}
+
+/* 平台分区：非首区顶部加分隔 / Platform section: top border except first */
+.sts-shortcut-section + .sts-shortcut-section {
+	border-top: 1px solid var(--background-modifier-border);
+	margin-top: 16px;
+	padding-top: 16px;
+}
+
+/* ── 参数行 / Parameter rows ── */
+
+.sts-shortcut-row {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	padding: 6px 0;
+}
+
+.sts-shortcut-row + .sts-shortcut-row {
+	border-top: 1px solid var(--background-modifier-border);
+}
+
+.sts-shortcut-label {
+	flex-shrink: 0;
+	min-width: 80px;
+	font-weight: 500;
+	color: var(--text-normal);
+	font-size: 0.9em;
+}
+
+.sts-shortcut-value {
+	flex: 1;
+	font-family: var(--font-monospace);
+	font-size: 0.82em;
+	color: var(--text-muted);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.sts-shortcut-copy-btn {
+	flex-shrink: 0;
+	cursor: pointer;
+	color: var(--text-muted);
+	display: inline-flex;
+	align-items: center;
+	padding: 4px;
+	border-radius: 4px;
+	transition: color 0.15s, background-color 0.15s;
+}
+
+.sts-shortcut-copy-btn:hover {
+	color: var(--interactive-accent);
+	background-color: var(--background-modifier-hover);
 }
