@@ -13,8 +13,8 @@ export type Translator = (key: string, params?: Record<string, string>) => strin
 /** 所有 UI 字符串 / All UI strings */
 export const STRINGS: Record<string, { zh: string; en: string }> = {
 	'ribbon.tooltip': {
-		zh: 'Share to Save：保存链接',
-		en: 'Share to Save: Save URL',
+		zh: 'Share to Save：保存内容',
+		en: 'Share to Save: Save Content',
 	},
 	'modal.title': {
 		zh: '保存内容',
