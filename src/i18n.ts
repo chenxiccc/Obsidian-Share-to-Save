@@ -40,6 +40,10 @@ export const STRINGS: Record<string, { zh: string; en: string }> = {
 		zh: '打开插件设置',
 		en: 'Open plugin settings',
 	},
+	'modal.paste': {
+		zh: '读取剪贴板',
+		en: 'Paste from clipboard',
+	},
 	'menu.saveText': {
 		zh: '保存文字',
 		en: 'Save Text',

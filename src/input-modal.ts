@@ -44,7 +44,9 @@ export class InputModal extends Modal {
 		});
 
 		// ── 输入区 / Input area ──
-		const textareaEl = contentEl.createEl('textarea', {
+		// 容器用于绝对定位剪贴板按钮 / Container for absolute positioning of clipboard button
+		const textareaContainer = contentEl.createDiv({ cls: 'sts-textarea-container' });
+		const textareaEl = textareaContainer.createEl('textarea', {
 			attr: {
 				placeholder: this.t('modal.placeholder'),
 				rows: '4',
@@ -64,10 +66,11 @@ export class InputModal extends Modal {
 			}, 100);
 		});
 
-		// ── 剪贴板自动填充（仅当无初始文本时）/ Clipboard auto-fill (only when no initial text) ──
-		if (!this.initialText) {
-			void this.tryFillFromClipboard();
-		}
+		// ── 剪贴板按钮（输入框内部右下角）/ Clipboard button (inside textarea, bottom-right) ──
+		const clipboardBtn = textareaContainer.createSpan({ cls: 'sts-clipboard-btn' });
+		setIcon(clipboardBtn, 'clipboard-check');
+		clipboardBtn.setAttribute('aria-label', this.t('modal.paste'));
+		clipboardBtn.addEventListener('click', () => { void this.pasteFromClipboard(); });
 
 		// ── 错误提示 / Error hint ──
 		this.errorEl = contentEl.createDiv({ cls: 'sts-input-error' });
@@ -144,18 +147,17 @@ export class InputModal extends Modal {
 	}
 
 	/**
-	 * 尝试从剪贴板自动填充（仅弹窗打开时触发一次）
-	 * Attempt to auto-fill from clipboard (triggers once on modal open)
+	 * 用户点击剪贴板按钮：读取剪贴板并填入输入框
+	 * Manual clipboard paste: read clipboard and fill the textarea
 	 *
+	 * 覆盖已有内容（用户主动点击，意图明确）/ Overwrite existing content (explicit user click)
 	 * 静默失败，不阻塞弹窗 / Silent failure, non-blocking
 	 */
-	private async tryFillFromClipboard(): Promise<void> {
+	private async pasteFromClipboard(): Promise<void> {
 		try {
 			if (!navigator.clipboard?.readText) return;
 			const text = await navigator.clipboard.readText();
-			// 仅当输入框仍为空时填充（避免覆盖用户已输入内容）
-			// Only fill if textarea is still empty (avoid overwriting user input)
-			if (text?.trim() && !this.textarea.value.trim()) {
+			if (text?.trim()) {
 				this.textarea.value = text.trim();
 			}
 		} catch {

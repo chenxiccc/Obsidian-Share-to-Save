@@ -32,6 +32,11 @@
 
 /* ── 输入区 / Input area ── */
 
+.sts-textarea-container {
+	position: relative;
+	width: 100%;
+}
+
 .sts-input-modal textarea.sts-input-textarea {
 	width: 100%;
 	min-height: 60px;
@@ -54,6 +59,29 @@
 
 .sts-input-modal textarea.sts-input-textarea::placeholder {
 	color: var(--text-faint);
+}
+
+/* ── 剪贴板按钮（输入框内部右下角）/ Clipboard button (inside textarea, bottom-right) ── */
+
+.sts-clipboard-btn {
+	position: absolute;
+	bottom: 8px;
+	right: 8px;
+	width: 32px;
+	height: 32px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	border-radius: 4px;
+	cursor: pointer;
+	opacity: 0.45;
+	color: var(--text-muted);
+	transition: opacity 0.15s, background-color 0.15s;
+}
+
+.sts-clipboard-btn:hover {
+	opacity: 0.85;
+	background-color: var(--background-modifier-hover);
 }
 
 /* ── 错误提示 / Error hint ── */
