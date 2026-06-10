@@ -164,29 +164,35 @@ export default class ShareToSavePlugin extends Plugin {
 	 * @param text 用户输入的文本 / User input text
 	 */
 	private async handleUrlInput(text: string): Promise<void> {
-		const urls = extractUrls(text);
-		if (urls.length === 0) {
-			new Notice(this.t('notice.noUrl'));
-			return;
-		}
+		try {
+			const urls = extractUrls(text);
+			if (urls.length === 0) {
+				new Notice(this.t('notice.noUrl'));
+				return;
+			}
 
-		// 统一入队 / Enqueue all URLs
-		for (const url of urls) {
-			await this.queueManager.appendEntry(
-				QueueManager.buildEntry(url, Platform.isDesktop ? 'desktop' : 'mobile'),
-			);
-		}
+			// 统一入队 / Enqueue all URLs
+			for (const url of urls) {
+				await this.queueManager.appendEntry(
+					QueueManager.buildEntry(url, Platform.isDesktop ? 'desktop' : 'mobile'),
+				);
+			}
 
-		// 数量通知 / Count notification
-		if (urls.length === 1) {
-			new Notice(this.t('notice.saved'));
-		} else {
-			new Notice(this.t('notice.savedMultiple', { count: String(urls.length) }));
-		}
+			// 数量通知 / Count notification
+			if (urls.length === 1) {
+				new Notice(this.t('notice.saved'));
+			} else {
+				new Notice(this.t('notice.savedMultiple', { count: String(urls.length) }));
+			}
 
-		// 立即处理（桌面端）/ Process immediately (desktop)
-		if (Platform.isDesktop) {
-			await this.fileWatcher?.processNow();
+			// 立即处理（桌面端）/ Process immediately (desktop)
+			if (Platform.isDesktop) {
+				await this.fileWatcher?.processNow();
+			}
+		} catch (err) {
+			const errMsg = err instanceof Error ? err.message : String(err);
+			console.error('Share to Save: URL 处理失败 / URL processing failed:', errMsg);
+			new Notice(`处理失败 / Processing failed: ${errMsg}`);
 		}
 	}
 
@@ -198,14 +204,15 @@ export default class ShareToSavePlugin extends Plugin {
 	 */
 	private async openInputModal(): Promise<void> {
 		// 防重入守卫：如果已有输入框打开则跳过 / Re-entry guard: skip if modal already open
+		// 先置 true 避免 await 期间的竞态 / Set true first to prevent race during await
 		if (this.isInputModalOpen) return;
+		this.isInputModalOpen = true;
 
 		// 桌面端：检查是否有待处理的队列条目 / Desktop: check for pending queue entries
 		if (Platform.isDesktop) {
 			const pendingEntries = await this.queueManager.getPendingEntries();
 			if (pendingEntries.length > 0) {
 				const urls = pendingEntries.map(e => e.url).join('\n');
-				this.isInputModalOpen = true;
 				new InputModal(
 					this.app,
 					this.t,
@@ -222,7 +229,6 @@ export default class ShareToSavePlugin extends Plugin {
 
 		// 无 pending 条目时使用原有流程（提取 URL → 入队 → 处理）
 		// Use existing flow when no pending entries (extract URL → enqueue → process)
-		this.isInputModalOpen = true;
 		new InputModal(this.app, this.t, (text) => this.handleTextSave(text), (text) => this.handleUrlInput(text), '', () => { this.isInputModalOpen = false; }).open();
 	}
 
