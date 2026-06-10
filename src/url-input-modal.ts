@@ -16,6 +16,7 @@ export class UrlInputModal extends Modal {
 		private t: Translator,
 		private onSave: (text: string) => Promise<void>,
 		private initialText: string = '',
+		private onCloseCallback?: () => void,
 	) {
 		super(app);
 	}
@@ -117,5 +118,6 @@ export class UrlInputModal extends Modal {
 	onClose(): void {
 		const { contentEl } = this;
 		contentEl.empty();
+		this.onCloseCallback?.();
 	}
 }

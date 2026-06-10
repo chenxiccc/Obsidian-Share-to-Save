@@ -29,6 +29,7 @@ export default class ShareToSavePlugin extends Plugin {
 	private fileWatcher!: FileWatcher;
 	private shareMenuInjector!: ShareMenuInjector;
 	private ribbonIconEl!: HTMLElement;
+	private isUrlModalOpen = false;
 
 	async onload(): Promise<void> {
 		// ── 加载设置 / Load settings ──
@@ -89,6 +90,13 @@ export default class ShareToSavePlugin extends Plugin {
 			callback: async () => {
 				await this.openUrlModal();
 			},
+		});
+
+		// ── 自定义 URI 协议处理 / Custom URI protocol handler ──
+		// 支持 obsidian://share-to-save 快速唤起 URL 输入框（Android 桌面快捷方式等）
+		// Supports obsidian://share-to-save to quickly open the URL input modal (Android shortcuts, etc.)
+		this.registerObsidianProtocolHandler('share-to-save', async () => {
+			await this.openUrlModal();
 		});
 
 		// ── 设置页 / Settings tab ──
@@ -168,11 +176,15 @@ export default class ShareToSavePlugin extends Plugin {
 	 * On desktop, pre-fill pending URLs and trigger processing directly on submit
 	 */
 	private async openUrlModal(): Promise<void> {
+		// 防重入守卫：如果已有输入框打开则跳过 / Re-entry guard: skip if modal already open
+		if (this.isUrlModalOpen) return;
+
 		// 桌面端：检查是否有待处理的队列条目 / Desktop: check for pending queue entries
 		if (Platform.isDesktop) {
 			const pendingEntries = await this.queueManager.getPendingEntries();
 			if (pendingEntries.length > 0) {
 				const urls = pendingEntries.map(e => e.url).join('\n');
+				this.isUrlModalOpen = true;
 				new UrlInputModal(
 					this.app,
 					this.t,
@@ -180,6 +192,7 @@ export default class ShareToSavePlugin extends Plugin {
 						await this.fileWatcher?.processNow();
 					},
 					urls,
+					() => { this.isUrlModalOpen = false; },
 				).open();
 				return;
 			}
@@ -187,7 +200,8 @@ export default class ShareToSavePlugin extends Plugin {
 
 		// 无 pending 条目时使用原有流程（提取 URL → 入队 → 处理）
 		// Use existing flow when no pending entries (extract URL → enqueue → process)
-		new UrlInputModal(this.app, this.t, (text) => this.handleUrlInput(text)).open();
+		this.isUrlModalOpen = true;
+		new UrlInputModal(this.app, this.t, (text) => this.handleUrlInput(text), '', () => { this.isUrlModalOpen = false; }).open();
 	}
 
 	// ─── 设置管理 / Settings management ────────────────────────────────────
