@@ -2,7 +2,8 @@
  * 插件设置 / Plugin settings
  */
 
-import { PluginSettingTab, Setting, App, Notice, requestUrl, setIcon, Platform } from 'obsidian';
+import { PluginSettingTab, Setting, App, requestUrl, setIcon, Platform } from 'obsidian';
+import { showNotice } from './notice-utils';
 import type ShareToSavePlugin from './main';
 import type { ShareToSaveSettings, PollIntervalUnit, TimestampFormat } from './types';
 import type { Translator } from './i18n';
@@ -77,7 +78,7 @@ export class ShareToSaveSettingTab extends PluginSettingTab {
 					.onChange(async (value) => {
 						const errorKey = validateFolderPath(value);
 						if (errorKey) {
-							new Notice(this.t(errorKey));
+							showNotice(this.t(errorKey));
 							return;
 						}
 						const trimmed = value.trim();
@@ -154,7 +155,7 @@ export class ShareToSaveSettingTab extends PluginSettingTab {
 		iosCopyBtn.setAttribute('aria-label', this.t('settings.shortcut.copy'));
 		iosCopyBtn.addEventListener('click', () => {
 			void navigator.clipboard.writeText('obsidian://share-to-save').then(() => {
-				new Notice(this.t('settings.shortcut.copied'));
+				showNotice(this.t('settings.shortcut.copied'));
 			});
 		});
 
@@ -189,7 +190,7 @@ export class ShareToSaveSettingTab extends PluginSettingTab {
 			copyBtn.setAttribute('aria-label', this.t('settings.shortcut.copy'));
 			copyBtn.addEventListener('click', () => {
 				void navigator.clipboard.writeText(field.value).then(() => {
-					new Notice(this.t('settings.shortcut.copied'));
+					showNotice(this.t('settings.shortcut.copied'));
 				});
 			});
 		}

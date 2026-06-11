@@ -8,9 +8,10 @@
  * 仅在桌面端运行 / Desktop only
  */
 
-import { Notice } from 'obsidian';
 import type { QueueManager } from './queue-manager';
 import type { Downloader } from './downloader';
+import type { Translator } from './i18n';
+import { showNotice } from './notice-utils';
 
 export class FileWatcher {
 	private timerId: number | null = null;
@@ -25,6 +26,7 @@ export class FileWatcher {
 		private downloader: Downloader,
 		private debugLog: (msg: string) => void,
 		private getPollIntervalMs: () => number,  // 动态配置，零耦合 / Dynamic config, zero coupling
+		private t: Translator,
 	) {
 		this.currentIntervalMs = getPollIntervalMs();
 	}
@@ -100,7 +102,7 @@ export class FileWatcher {
 				try {
 					const result = await this.downloader.processUrl(entry.url, entry.id);
 					if (result.success) {
-						new Notice(`已保存: ${result.title ?? entry.url}`);
+						showNotice(this.t('notice.savedTitle', { title: result.title ?? entry.url }));
 					} else {
 						await this.downloader.saveFailedNote(entry.url);
 						this.debugLog(`提取失败 / Extraction failed: ${entry.url}`);

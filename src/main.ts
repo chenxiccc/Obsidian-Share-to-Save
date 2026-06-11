@@ -9,7 +9,7 @@
  * Desktop: poll queue directory, download content and save as .md
  */
 
-import { Plugin, Platform, Notice, getLanguage } from 'obsidian';
+import { Plugin, Platform, getLanguage } from 'obsidian';
 import type { ShareToSaveSettings } from './types';
 import { DEFAULT_SETTINGS, ShareToSaveSettingTab } from './settings';
 import { detectLocale, createTranslator } from './i18n';
@@ -21,6 +21,7 @@ import { FileWatcher } from './file-watcher';
 import { ShareMenuInjector } from './share-menu-injector';
 import { InputModal } from './input-modal';
 import { TextSaver } from './text-saver';
+import { showNotice } from './notice-utils';
 
 export default class ShareToSavePlugin extends Plugin {
 	settings!: ShareToSaveSettings;
@@ -77,6 +78,7 @@ export default class ShareToSavePlugin extends Plugin {
 					console.debug(`Share to Save: ${msg}`);
 				},
 				() => this.getPollIntervalMs(),
+				this.t,
 			);
 			this.fileWatcher.start();
 			this.fileWatcher.onProcessingChange = (processing) => {
@@ -112,6 +114,8 @@ export default class ShareToSavePlugin extends Plugin {
 	onunload(): void {
 		this.shareMenuInjector?.stop();
 		this.fileWatcher?.stop();
+		// 清理残留的移动端 toast / Clean up lingering mobile toast
+		document.querySelector('.sts-mobile-toast')?.remove();
 	}
 
 	// ─── 核心方法 / Core methods ────────────────────────────────────────────
@@ -126,7 +130,7 @@ export default class ShareToSavePlugin extends Plugin {
 	private async handleSharedUrl(text: string): Promise<void> {
 		const url = extractUrl(text);
 		if (!url) {
-			new Notice(this.t('notice.noUrl'));
+			showNotice(this.t('notice.noUrl'));
 			return;
 		}
 
@@ -139,7 +143,7 @@ export default class ShareToSavePlugin extends Plugin {
 			await this.fileWatcher?.processNow();
 		}
 
-		new Notice(this.t('notice.saved'));
+		showNotice(this.t('notice.saved'));
 	}
 
 	/**
@@ -149,11 +153,11 @@ export default class ShareToSavePlugin extends Plugin {
 	private async handleTextSave(text: string, addTimestamp: boolean): Promise<void> {
 		try {
 			await this.textSaver.save(text, addTimestamp);
-			new Notice(this.t('notice.textSaved'));
+			showNotice(this.t('notice.textSaved'));
 		} catch (err) {
 			const errMsg = err instanceof Error ? err.message : String(err);
 			console.error('Share to Save: 保存文字失败 / Text save failed:', errMsg);
-			new Notice(`保存文字失败 / Text save failed: ${errMsg}`);
+			showNotice(this.t('notice.downloadFailed', { error: errMsg }), 5000);
 		}
 	}
 
@@ -167,7 +171,7 @@ export default class ShareToSavePlugin extends Plugin {
 		try {
 			const urls = extractUrls(text);
 			if (urls.length === 0) {
-				new Notice(this.t('notice.noUrl'));
+				showNotice(this.t('notice.noUrl'));
 				return;
 			}
 
@@ -180,9 +184,9 @@ export default class ShareToSavePlugin extends Plugin {
 
 			// 数量通知 / Count notification
 			if (urls.length === 1) {
-				new Notice(this.t('notice.saved'));
+				showNotice(this.t('notice.saved'));
 			} else {
-				new Notice(this.t('notice.savedMultiple', { count: String(urls.length) }));
+				showNotice(this.t('notice.savedMultiple', { count: String(urls.length) }));
 			}
 
 			// 立即处理（桌面端）/ Process immediately (desktop)
@@ -192,7 +196,7 @@ export default class ShareToSavePlugin extends Plugin {
 		} catch (err) {
 			const errMsg = err instanceof Error ? err.message : String(err);
 			console.error('Share to Save: URL 处理失败 / URL processing failed:', errMsg);
-			new Notice(`处理失败 / Processing failed: ${errMsg}`);
+			showNotice(this.t('notice.downloadFailed', { error: errMsg }), 5000);
 		}
 	}
 
