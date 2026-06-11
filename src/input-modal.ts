@@ -10,16 +10,20 @@ import { extractUrl, isValidUrl } from './url-extractor';
 export class InputModal extends Modal {
 	private textarea!: HTMLTextAreaElement;
 	private errorEl!: HTMLElement;
+	private timestampEnabled: boolean;
 
 	constructor(
 		app: App,
 		private t: Translator,
-		private onSaveText: (text: string) => Promise<void>,
+		private onSaveText: (text: string, addTimestamp: boolean) => Promise<void>,
 		private onSaveUrl: (text: string) => Promise<void>,
 		private initialText: string = '',
 		private onCloseCallback?: () => void,
+		initialTimestampEnabled: boolean = true,
+		private onTimestampChange?: (enabled: boolean) => Promise<void>,
 	) {
 		super(app);
+		this.timestampEnabled = initialTimestampEnabled;
 	}
 
 	onOpen(): void {
@@ -80,16 +84,41 @@ export class InputModal extends Modal {
 		// ── 底部按钮 / Bottom buttons ──
 		const buttonRow = contentEl.createDiv({ cls: 'sts-button-row' });
 
-		// 保存文字（左，次要按钮）/ Save Text (left, secondary button)
-		const textBtn = buttonRow.createDiv({ cls: 'sts-save-btn sts-save-text-btn' });
-		textBtn.setText(this.t('modal.saveText'));
-		textBtn.addEventListener('click', () => { void this.handleSaveText(); });
-
-		// 保存网页（右，主按钮）/ Save Webpage (right, primary button)
+		// 保存网页（左，主按钮）/ Save Webpage (left, primary button)
 		const urlBtn = buttonRow.createDiv({ cls: 'sts-save-btn sts-save-url-btn' });
 		urlBtn.setText(this.t('modal.saveWebpage'));
 		urlBtn.addEventListener('click', () => { void this.handleSubmit(); });
 
+		// 右侧按钮组（保存文字 + 时间戳开关）/ Save Text + timestamp toggle group
+		const rightGroup = buttonRow.createDiv({ cls: 'sts-save-text-group' });
+
+		// 保存文字（次要按钮）/ Save Text (secondary button)
+		const textBtn = rightGroup.createDiv({ cls: 'sts-save-btn sts-save-text-btn' });
+		textBtn.setText(this.t('modal.saveText'));
+		textBtn.addEventListener('click', () => { void this.handleSaveText(); });
+
+		// 时间戳开关图标（"保存文字"右侧）/ Timestamp toggle icon (right of Save Text button)
+		// 默认点亮（accent色，向后兼容），点击切换熄灭/点亮并持久化到 data.json
+		// Default lit (accent, backward compatible), toggle to dim/lit and persist to data.json
+		const timestampBtn = rightGroup.createSpan({ cls: 'sts-timestamp-toggle' });
+		setIcon(timestampBtn, 'calendar-clock');
+		this.updateTimestampUI(timestampBtn);
+		timestampBtn.addEventListener('click', async () => {
+			this.timestampEnabled = !this.timestampEnabled;
+			this.updateTimestampUI(timestampBtn);
+			await this.onTimestampChange?.(this.timestampEnabled);
+		});
+
+	}
+
+	/**
+	 * 更新时间戳图标 UI 状态（熄灭/点亮 + aria-label）
+	 * Update timestamp toggle icon UI state (dim/lit + aria-label)
+	 */
+	private updateTimestampUI(iconEl: HTMLElement): void {
+		iconEl.classList.toggle('sts-timestamp-active', this.timestampEnabled);
+		iconEl.setAttribute('aria-label',
+			this.t(this.timestampEnabled ? 'modal.timestampOn' : 'modal.timestampOff'));
 	}
 
 	/**
@@ -104,7 +133,7 @@ export class InputModal extends Modal {
 		}
 		this.errorEl.addClass('sts-hidden');
 		this.close();
-		await this.onSaveText(text);
+		await this.onSaveText(text, this.timestampEnabled);
 	}
 
 	/**

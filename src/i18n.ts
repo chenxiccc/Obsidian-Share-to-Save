@@ -44,6 +44,14 @@ export const STRINGS: Record<string, { zh: string; en: string }> = {
 		zh: '读取剪贴板',
 		en: 'Paste from clipboard',
 	},
+	'modal.timestampOn': {
+		zh: '启用时间戳',
+		en: 'Enable timestamp',
+	},
+	'modal.timestampOff': {
+		zh: '停用时间戳',
+		en: 'Disable timestamp',
+	},
 	'menu.saveText': {
 		zh: '保存文字',
 		en: 'Save Text',
@@ -111,6 +119,30 @@ export const STRINGS: Record<string, { zh: string; en: string }> = {
 	'settings.pollInterval.hours': {
 		zh: '小时',
 		en: 'hours',
+	},
+	'settings.timestampFormat.name': {
+		zh: '时间戳格式',
+		en: 'Timestamp format',
+	},
+	'settings.timestampFormat.desc': {
+		zh: '保存文字时，时间戳的标题级别',
+		en: 'Heading level for timestamp when saving text',
+	},
+	'settings.timestampFormat.h1': {
+		zh: 'H1 标题',
+		en: 'H1 heading',
+	},
+	'settings.timestampFormat.h2': {
+		zh: 'H2 标题',
+		en: 'H2 heading',
+	},
+	'settings.timestampFormat.h3': {
+		zh: 'H3 标题',
+		en: 'H3 heading',
+	},
+	'settings.timestampFormat.body': {
+		zh: '正文',
+		en: 'Body text',
 	},
 
 	'settings.shortcut.heading': {

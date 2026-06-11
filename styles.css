@@ -106,9 +106,62 @@
 	transition: opacity 0.15s, background-color 0.15s;
 }
 
-.sts-clipboard-btn:hover {
+/* 移动端触摸反馈（手指抬起即消失）/ Mobile touch feedback (released on finger lift) */
+.sts-clipboard-btn:active {
 	opacity: 0.85;
 	background-color: var(--background-modifier-hover);
+}
+
+/* 桌面端 hover（仅在支持真正 hover 的设备上生效，避免移动端粘滞）/ Desktop hover (only on hover-capable devices to avoid mobile sticky) */
+@media (hover: hover) {
+	.sts-clipboard-btn:hover {
+		opacity: 0.85;
+		background-color: var(--background-modifier-hover);
+	}
+}
+
+/* ── 时间戳开关图标（熄灭 = dim，点亮 = accent）/ Timestamp toggle icon ── */
+
+.sts-timestamp-toggle {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 40px;
+	height: 40px;
+	border-radius: 6px;
+	cursor: pointer;
+	color: var(--text-muted);
+	opacity: 0.6;
+	transition: color 0.15s, opacity 0.15s, background-color 0.15s;
+	flex-shrink: 0;
+}
+
+.sts-timestamp-toggle svg {
+	width: 25px;
+	height: 25px;
+}
+
+/* 移动端触摸反馈 / Mobile touch feedback */
+.sts-timestamp-toggle:active {
+	opacity: 0.85;
+	background-color: var(--background-modifier-hover);
+}
+
+.sts-timestamp-toggle.sts-timestamp-active {
+	color: var(--interactive-accent);
+	opacity: 1;
+}
+
+/* 桌面端 hover（仅在支持真正 hover 的设备上生效）/ Desktop hover (only on hover-capable devices) */
+@media (hover: hover) {
+	.sts-timestamp-toggle:hover {
+		opacity: 0.85;
+		background-color: var(--background-modifier-hover);
+	}
+
+	.sts-timestamp-toggle.sts-timestamp-active:hover {
+		opacity: 0.85;
+	}
 }
 
 /* ── 错误提示 / Error hint ── */
@@ -126,10 +179,19 @@
 .sts-input-modal .sts-button-row {
 	display: flex;
 	align-items: center;
-	justify-content: center;
+	/* 从右到左定位：右边缘由 padding-right 控制，左边距自动适配 / Right-to-left: right edge explicit, left auto-adapts */
+	justify-content: flex-end;
 	flex-wrap: nowrap;
-	gap: 12px;
+	gap: 24px;
+	padding-right: 7px;
 	margin-top: 10px;  /* 20px → 10px */
+}
+
+/* 保存文字 + 时间戳开关组合 / Save Text + timestamp toggle group */
+.sts-save-text-group {
+	display: flex;
+	align-items: center;
+	gap: 2px;
 }
 
 .sts-input-modal .sts-save-btn {

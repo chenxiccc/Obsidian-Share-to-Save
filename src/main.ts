@@ -49,11 +49,11 @@ export default class ShareToSavePlugin extends Plugin {
 		);
 
 		// ── 初始化文字保存器 / Initialize text saver ──
-		this.textSaver = new TextSaver(this.app.vault, this.settings.outputFolder);
+		this.textSaver = new TextSaver(this.app.vault, this.settings);
 
 		// ── 初始化分享菜单注入器（移动端）/ Initialize share menu injector (mobile) ──
 		this.shareMenuInjector = new ShareMenuInjector(
-			(text) => this.handleTextSave(text),
+			(text) => this.handleTextSave(text, this.settings.timestampEnabled),
 			(url) => this.handleSharedUrl(url),
 			this.t,
 		);
@@ -146,9 +146,9 @@ export default class ShareToSavePlugin extends Plugin {
 	 * 保存文字到 Share-to-Save.md（非 URL，不进入下载队列）
 	 * Save text to Share-to-Save.md (non-URL, bypasses download queue)
 	 */
-	private async handleTextSave(text: string): Promise<void> {
+	private async handleTextSave(text: string, addTimestamp: boolean): Promise<void> {
 		try {
-			await this.textSaver.save(text);
+			await this.textSaver.save(text, addTimestamp);
 			new Notice(this.t('notice.textSaved'));
 		} catch (err) {
 			const errMsg = err instanceof Error ? err.message : String(err);
@@ -216,12 +216,17 @@ export default class ShareToSavePlugin extends Plugin {
 				new InputModal(
 					this.app,
 					this.t,
-					(text) => this.handleTextSave(text),
+					(text, addTimestamp) => this.handleTextSave(text, addTimestamp),
 					async () => {
 						await this.fileWatcher?.processNow();
 					},
 					urls,
 					() => { this.isInputModalOpen = false; },
+					this.settings.timestampEnabled,
+					async (enabled) => {
+						this.settings.timestampEnabled = enabled;
+						await this.saveSettings();
+					},
 				).open();
 				return;
 			}
@@ -229,7 +234,18 @@ export default class ShareToSavePlugin extends Plugin {
 
 		// 无 pending 条目时使用原有流程（提取 URL → 入队 → 处理）
 		// Use existing flow when no pending entries (extract URL → enqueue → process)
-		new InputModal(this.app, this.t, (text) => this.handleTextSave(text), (text) => this.handleUrlInput(text), '', () => { this.isInputModalOpen = false; }).open();
+		new InputModal(
+			this.app, this.t,
+			(text, addTimestamp) => this.handleTextSave(text, addTimestamp),
+			(text) => this.handleUrlInput(text),
+			'',
+			() => { this.isInputModalOpen = false; },
+			this.settings.timestampEnabled,
+			async (enabled) => {
+				this.settings.timestampEnabled = enabled;
+				await this.saveSettings();
+			},
+		).open();
 	}
 
 	// ─── 设置管理 / Settings management ────────────────────────────────────

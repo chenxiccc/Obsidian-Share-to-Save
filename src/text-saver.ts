@@ -7,6 +7,7 @@
  */
 
 import { Vault, TFile, normalizePath } from 'obsidian';
+import type { ShareToSaveSettings } from './types';
 
 /** 固定输出文件名 / Fixed output filename */
 const NOTE_NAME = 'Share-to-Save.md';
@@ -14,7 +15,7 @@ const NOTE_NAME = 'Share-to-Save.md';
 export class TextSaver {
 	constructor(
 		private vault: Vault,
-		private outputFolder: string,
+		private settings: ShareToSaveSettings,
 	) {}
 
 	/**
@@ -26,23 +27,39 @@ export class TextSaver {
 	 *
 	 * 修改已有文件用 vault.process() — 原子读-改-写，Obsidian 推荐方式
 	 * Existing file: vault.process() — atomic read-modify-write, Obsidian recommended
+	 *
+	 * @param text 用户输入的文字 / User-entered text
+	 * @param addTimestamp 是否添加时间戳 / Whether to add a timestamp heading
 	 */
-	async save(text: string): Promise<void> {
-		const filePath = normalizePath(`${this.outputFolder}/${NOTE_NAME}`);
+	async save(text: string, addTimestamp: boolean): Promise<void> {
+		const filePath = normalizePath(`${this.settings.outputFolder}/${NOTE_NAME}`);
 
 		// 时间戳 YYYY/MM/DD HH:mm:ss / Timestamp
 		const now = new Date();
 		const pad = (n: number) => String(n).padStart(2, '0');
-		const timestamp = `${now.getFullYear()}/${pad(now.getMonth() + 1)}/${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
-		const newBlock = `\n# ${timestamp}\n${text}\n`;
+		const ts = `${now.getFullYear()}/${pad(now.getMonth() + 1)}/${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+
+		let prefix: string;
+		if (!addTimestamp) {
+			prefix = '';
+		} else {
+			switch (this.settings.timestampFormat) {
+				case 'h2':   prefix = `## ${ts}`; break;
+				case 'h3':   prefix = `### ${ts}`; break;
+				case 'body': prefix = ts; break;
+				default:     prefix = `# ${ts}`;  // 'h1' or unrecognized
+			}
+		}
+
+		const newBlock = prefix ? `\n${prefix}\n${text}\n` : `\n${text}\n`;
 
 		const fileExists = await this.vault.adapter.exists(filePath);
 
 		if (!fileExists) {
 			// 确保目录存在 / Ensure directory exists
-			const dirExists = await this.vault.adapter.exists(this.outputFolder);
+			const dirExists = await this.vault.adapter.exists(this.settings.outputFolder);
 			if (!dirExists) {
-				await this.vault.createFolder(this.outputFolder);
+				await this.vault.createFolder(this.settings.outputFolder);
 			}
 			// vault.create() — 触发 'create' 事件，返回 TFile
 			await this.vault.create(filePath, `---\nsts_id: text\n---\n${newBlock}`);

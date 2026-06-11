@@ -37,6 +37,9 @@ export interface ParsedContent extends Metadata {
 /** 轮询间隔单位 / Poll interval unit */
 export type PollIntervalUnit = 'seconds' | 'minutes' | 'hours';
 
+/** 时间戳格式（保存文字时使用）/ Timestamp format (used when saving text) */
+export type TimestampFormat = 'h1' | 'h2' | 'h3' | 'body';
+
 /** 插件设置 / Plugin settings */
 export interface ShareToSaveSettings {
 	/** 输出文件夹名（默认 "Share-to-Save"）/ Output folder name (default "Share-to-Save") */
@@ -45,6 +48,10 @@ export interface ShareToSaveSettings {
 	pollIntervalValue: number;
 	/** 轮询间隔单位 / Poll interval unit */
 	pollIntervalUnit: PollIntervalUnit;
+	/** 时间戳格式（默认 H1）/ Timestamp format (default H1) */
+	timestampFormat: TimestampFormat;
+	/** 保存文字是否添加时间戳（默认 true，向后兼容）/ Whether to add timestamp when saving text (default true, backward compatible) */
+	timestampEnabled: boolean;
 }
 
 /** 图片下载结果 / Image download result */
@@ -63,4 +70,3 @@ export interface ProcessResult {
 	title?: string;
 	error?: string;
 }
-

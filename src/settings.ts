@@ -4,7 +4,7 @@
 
 import { PluginSettingTab, Setting, App, Notice, requestUrl, setIcon, Platform } from 'obsidian';
 import type ShareToSavePlugin from './main';
-import type { ShareToSaveSettings, PollIntervalUnit } from './types';
+import type { ShareToSaveSettings, PollIntervalUnit, TimestampFormat } from './types';
 import type { Translator } from './i18n';
 import { validateFolderPath } from './text-utils';
 
@@ -13,6 +13,8 @@ export const DEFAULT_SETTINGS: ShareToSaveSettings = {
 	outputFolder: 'Share-to-Save',
 	pollIntervalValue: 30,
 	pollIntervalUnit: 'seconds',
+	timestampFormat: 'h1',
+	timestampEnabled: true,
 };
 
 /** 用户流程图远程 URL / User flow diagram remote URL */
@@ -112,7 +114,24 @@ export class ShareToSaveSettingTab extends PluginSettingTab {
 						await this.plugin.saveSettings();
 					})
 			);
-	}
+		}
+
+	// ── 时间戳格式 / Timestamp format ──
+		new Setting(containerEl)
+			.setName(this.t('settings.timestampFormat.name'))
+			.setDesc(this.t('settings.timestampFormat.desc'))
+			.addDropdown(dropdown =>
+				dropdown
+					.addOption('h1', this.t('settings.timestampFormat.h1'))
+					.addOption('h2', this.t('settings.timestampFormat.h2'))
+					.addOption('h3', this.t('settings.timestampFormat.h3'))
+					.addOption('body', this.t('settings.timestampFormat.body'))
+					.setValue(this.plugin.settings.timestampFormat)
+					.onChange(async (value) => {
+						this.plugin.settings.timestampFormat = value as TimestampFormat;
+						await this.plugin.saveSettings();
+					})
+			);
 
 	// ── 添加桌面快捷方式 / Add to Home Screen ──
 		const shortcutBox = containerEl.createDiv({ cls: 'sts-shortcut-box' });
