@@ -276,7 +276,7 @@ export class ImageShareMenuInjector {
 					? window.Capacitor.convertFileSrc(file.uri)
 					: file.uri;
 
-				const response = await fetch(fileUrl);
+				const response = await window.fetch(fileUrl);
 				if (!response.ok) {
 					throw new Error(`HTTP ${response.status}`);
 				}
