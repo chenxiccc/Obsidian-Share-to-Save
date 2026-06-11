@@ -123,14 +123,17 @@ export class ImageShareMenuInjector {
 			return;
 		}
 
-		this.origHandleShareFiles = proto.handleShareFiles;
-		const self = this;
+		const descriptor = Object.getOwnPropertyDescriptor(proto, 'handleShareFiles');
+		if (!descriptor?.value) return;
+		this.origHandleShareFiles = descriptor.value;
 
-		proto.handleShareFiles = function (files: SharedFile[]) {
-			self.pendingFiles = files;
-			self.injectedMenu = null;
-			return self.origHandleShareFiles!.call(this, files);
-		};
+		proto.handleShareFiles = ((ctx) => {
+			return function (this: ShareReceiverInstance, files: SharedFile[]) {
+				ctx.pendingFiles = files;
+				ctx.injectedMenu = null;
+				return ctx.origHandleShareFiles!.call(this, files);
+			};
+		})(this);
 	}
 
 	// ─── MutationObserver ──────────────────────────────────────────────────
