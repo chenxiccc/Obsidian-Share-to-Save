@@ -873,10 +873,11 @@ class ZhihuConverter implements ContentConverter {
 		};
 
 		const published = fmtTs(updated);
-		let bodyText = `发布于 ${fmtDisplay(created)}・${ipInfo}`;
+		let bodyText = `发布于 ${fmtDisplay(created)}`;
 		if (created !== updated) {
-			bodyText += `\n编辑于 ${fmtDisplay(updated)}・${ipInfo}`;
+			bodyText += ` 编辑于 ${fmtDisplay(updated)}`;
 		}
+		bodyText += `・${ipInfo}`;
 
 		return { published, bodyText };
 	}
