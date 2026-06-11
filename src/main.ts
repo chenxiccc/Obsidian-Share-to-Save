@@ -19,6 +19,7 @@ import { QueueManager } from './queue-manager';
 import { Downloader } from './downloader';
 import { FileWatcher } from './file-watcher';
 import { ShareMenuInjector } from './share-menu-injector';
+import { ImageShareMenuInjector } from './image-share-injector';
 import { InputModal } from './input-modal';
 import { TextSaver } from './text-saver';
 import { showNotice } from './notice-utils';
@@ -30,6 +31,7 @@ export default class ShareToSavePlugin extends Plugin {
 	private downloader!: Downloader;
 	private fileWatcher!: FileWatcher;
 	private shareMenuInjector!: ShareMenuInjector;
+	private imageShareInjector!: ImageShareMenuInjector;
 	private ribbonIconEl!: HTMLElement;
 	private textSaver!: TextSaver;
 	private isInputModalOpen = false;
@@ -61,6 +63,16 @@ export default class ShareToSavePlugin extends Plugin {
 
 		if (Platform.isMobile) {
 			this.shareMenuInjector.start();
+		}
+
+		// ── 初始化图片分享菜单注入器（移动端）/ Initialize image share menu injector (mobile) ──
+		this.imageShareInjector = new ImageShareMenuInjector(
+			this.app.vault,
+			() => this.settings.outputFolder,
+			this.t,
+		);
+		if (Platform.isMobile) {
+			this.imageShareInjector.start();
 		}
 
 		// ── 初始化下载器和文件监听器（桌面端）/ Initialize downloader & watcher (desktop) ──
@@ -113,6 +125,7 @@ export default class ShareToSavePlugin extends Plugin {
 
 	onunload(): void {
 		this.shareMenuInjector?.stop();
+		this.imageShareInjector?.stop();
 		this.fileWatcher?.stop();
 		// 清理残留的移动端 toast / Clean up lingering mobile toast
 		activeDocument.querySelector('.sts-mobile-toast')?.remove();

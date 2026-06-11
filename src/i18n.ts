@@ -231,6 +231,28 @@ export const STRINGS: Record<string, { zh: string; en: string }> = {
 		zh: '没有待处理的链接',
 		en: 'No pending URLs',
 	},
+
+	// ── 图片保存 / Image save ──
+	'menu.saveImage': {
+		zh: '保存图片',
+		en: 'Save Image',
+	},
+	'notice.imageSavedName': {
+		zh: '图片已保存: ${name}',
+		en: 'Image saved: ${name}',
+	},
+	'notice.imagesSaved': {
+		zh: '已保存 ${count} 张图片',
+		en: 'Saved ${count} images',
+	},
+	'notice.imageSavedPartial': {
+		zh: '已保存 ${ok} 张，${fail} 张失败',
+		en: 'Saved ${ok}, ${fail} failed',
+	},
+	'notice.imageFailed': {
+		zh: '图片保存失败',
+		en: 'Image save failed',
+	},
 };
 
 /**
