@@ -103,10 +103,12 @@ export class InputModal extends Modal {
 		const timestampBtn = rightGroup.createSpan({ cls: 'sts-timestamp-toggle' });
 		setIcon(timestampBtn, 'calendar-clock');
 		this.updateTimestampUI(timestampBtn);
-		timestampBtn.addEventListener('click', async () => {
-			this.timestampEnabled = !this.timestampEnabled;
-			this.updateTimestampUI(timestampBtn);
-			await this.onTimestampChange?.(this.timestampEnabled);
+		timestampBtn.addEventListener('click', () => {
+			void (async () => {
+				this.timestampEnabled = !this.timestampEnabled;
+				this.updateTimestampUI(timestampBtn);
+				await this.onTimestampChange?.(this.timestampEnabled);
+			})();
 		});
 
 	}

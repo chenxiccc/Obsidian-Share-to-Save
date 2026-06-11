@@ -30,10 +30,10 @@ export function showNotice(message: string, duration = 2500): ShowNotice {
 	}
 
 	// 移除已有 toast，避免堆叠 / Remove existing toast to prevent stacking
-	const existing = document.querySelector('.sts-mobile-toast');
+	const existing = activeDocument.querySelector('.sts-mobile-toast');
 	if (existing) existing.remove();
 
-	const toast = document.body.createDiv();
+	const toast = activeDocument.body.createDiv();
 	toast.className = 'sts-mobile-toast';
 	toast.textContent = message;
 

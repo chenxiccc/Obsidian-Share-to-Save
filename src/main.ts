@@ -115,7 +115,7 @@ export default class ShareToSavePlugin extends Plugin {
 		this.shareMenuInjector?.stop();
 		this.fileWatcher?.stop();
 		// 清理残留的移动端 toast / Clean up lingering mobile toast
-		document.querySelector('.sts-mobile-toast')?.remove();
+		activeDocument.querySelector('.sts-mobile-toast')?.remove();
 	}
 
 	// ─── 核心方法 / Core methods ────────────────────────────────────────────
