@@ -143,12 +143,12 @@ export class ImageShareMenuInjector {
 		this.observer = new MutationObserver((mutations) => {
 			for (const mutation of mutations) {
 				for (const node of Array.from(mutation.addedNodes)) {
-					if (node instanceof HTMLElement && node.matches('body > .menu')) {
+					if (node.instanceOf(HTMLElement) && node.matches('body > .menu')) {
 						this.onMenuAdded(node);
 					}
 				}
 				for (const node of Array.from(mutation.removedNodes)) {
-					if (node instanceof HTMLElement && node.matches('.menu')) {
+					if (node.instanceOf(HTMLElement) && node.matches('.menu')) {
 						this.onMenuRemoved(node);
 					}
 				}
@@ -195,7 +195,7 @@ export class ImageShareMenuInjector {
 		if (groups.length < 2) return;
 
 		const actionGroup = groups[1];
-		if (!(actionGroup instanceof HTMLElement)) return;
+		if (!actionGroup?.instanceOf(HTMLElement)) return;
 
 		const tappableItems = actionGroup.querySelectorAll('.menu-item.tappable');
 		if (tappableItems.length === 0) return;
@@ -229,7 +229,7 @@ export class ImageShareMenuInjector {
 		if (groups.length < 2) return;
 
 		const actionGroup = groups[1];
-		if (!(actionGroup instanceof HTMLElement)) return;
+		if (!actionGroup?.instanceOf(HTMLElement)) return;
 
 		const tappableItems = actionGroup.querySelectorAll('.menu-item.tappable');
 		if (tappableItems.length === 0) return;
