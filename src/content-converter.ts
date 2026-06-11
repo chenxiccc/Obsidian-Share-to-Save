@@ -468,6 +468,31 @@ interface XhsInitialState {
 	};
 }
 
+/**
+ * 知乎 js-initialData SSR JSON 结构（精简版，仅时间提取所需字段）
+ * Zhihu js-initialData SSR JSON structure (minimal, only fields needed for time extraction)
+ */
+interface ZhihuInitialData {
+	initialState?: {
+		entities?: {
+			articles?: Record<string, ZhihuArticleInfo>;
+			answers?: Record<string, ZhihuAnswerInfo>;
+		};
+	};
+}
+
+interface ZhihuArticleInfo {
+	created: number;
+	updated: number;
+	ipInfo: string;
+}
+
+interface ZhihuAnswerInfo {
+	createdTime: number;
+	updatedTime: number;
+	ipInfo: string;
+}
+
 // ─── 小红书转换器 / Xiaohongshu Converter ────────────────────────────────────
 
 class XiaohongshuConverter implements ContentConverter {
@@ -833,7 +858,7 @@ class ZhihuConverter implements ContentConverter {
 		if (!scriptEl?.textContent) return null;
 
 		try {
-			const data = JSON.parse(scriptEl.textContent);
+			const data = JSON.parse(scriptEl.textContent) as ZhihuInitialData;
 			const entities = data?.initialState?.entities || {};
 
 			// 专栏 / zhuanlan: entities.articles[id]
