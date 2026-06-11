@@ -26,6 +26,7 @@ export class InputModal extends Modal {
 		const { contentEl, titleEl } = this;
 		contentEl.empty();
 		contentEl.addClass('sts-input-modal');
+		this.modalEl.addClass('sts-modal');
 
 		// ── 标题 / Title ──
 		titleEl.empty();
@@ -49,7 +50,7 @@ export class InputModal extends Modal {
 		const textareaEl = textareaContainer.createEl('textarea', {
 			attr: {
 				placeholder: this.t('modal.placeholder'),
-				rows: '4',
+				rows: '6',
 			},
 			cls: 'sts-input-textarea',
 		});

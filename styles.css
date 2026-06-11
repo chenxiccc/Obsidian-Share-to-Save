@@ -9,6 +9,33 @@
 	max-width: 520px;
 }
 
+/* ── Modal 布局优化 / Modal layout optimization ── */
+
+/* ── 以下为手机端专属（桌面端使用 Obsidian 默认值） ── */
+
+/* 标题区域收紧 / Tighter header */
+.is-phone .sts-modal .modal-header {
+	padding-top: 16px;     /* Obsidian 移动端 24px → 16px */
+	padding-bottom: 6px;   /* Obsidian 移动端 16px → 6px */
+	margin-bottom: 0;      /* Obsidian 默认 11.25px → 0 */
+}
+
+/* 内容区上方收紧 / Tighter content top */
+.is-phone .sts-modal .modal-content {
+	padding-top: 6px;      /* Obsidian 移动端 16px → 6px */
+}
+
+/* 关闭按钮缩小 + 上移 / Smaller close button, moved up */
+.is-phone .sts-modal .modal-close-button {
+	top: 4px;              /* Obsidian 移动端 12px → 4px */
+	transform: scale(0.8); /* Obsidian 移动端 44px → ~35px */
+}
+
+/* 整体上移：键盘避让 / Shift up for keyboard avoidance */
+.is-phone .sts-modal {
+	transform: translateY(-80px);
+}
+
 /* ── 标题图标 / Title icon ── */
 
 .sts-modal-title-icon {
@@ -39,7 +66,7 @@
 
 .sts-input-modal textarea.sts-input-textarea {
 	width: 100%;
-	min-height: 60px;
+	min-height: 130px;  /* 6 rows × 17.16px + 28px padding + 2px border ≈ 133px */
 	font-family: var(--font-monospace);
 	font-size: 0.88em;
 	padding: 14px;
@@ -102,7 +129,7 @@
 	justify-content: center;
 	flex-wrap: nowrap;
 	gap: 12px;
-	margin-top: 20px;
+	margin-top: 10px;  /* 20px → 10px */
 }
 
 .sts-input-modal .sts-save-btn {
@@ -268,3 +295,6 @@
 	color: var(--interactive-accent);
 	background-color: var(--background-modifier-hover);
 }
+
+/* ── 移动端键盘避让已集成到上方 .is-phone .sts-modal 规则块中 ── */
+/* ── Keyboard avoidance is now part of the .is-phone .sts-modal rule above ── */
