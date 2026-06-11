@@ -67,7 +67,7 @@ export default class ShareToSavePlugin extends Plugin {
 
 		// ── 初始化图片分享菜单注入器（移动端）/ Initialize image share menu injector (mobile) ──
 		this.imageShareInjector = new ImageShareMenuInjector(
-			this.app.vault,
+			this.app,
 			() => this.settings.outputFolder,
 			this.t,
 		);

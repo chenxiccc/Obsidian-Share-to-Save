@@ -13,7 +13,7 @@
  */
 
 import { setIcon, Platform } from 'obsidian';
-import type { Vault } from 'obsidian';
+import type { App } from 'obsidian';
 import type { Translator } from './i18n';
 import { showNotice } from './notice-utils';
 
@@ -37,7 +37,7 @@ export class ImageShareMenuInjector {
 	private injectedMenu: HTMLElement | null = null;
 
 	constructor(
-		private vault: Vault,
+		private app: App,
 		private getOutputFolder: () => string,
 		private t: Translator,
 	) {}
@@ -61,9 +61,11 @@ export class ImageShareMenuInjector {
 		// 恢复原型方法 / Restore prototype method
 		if (this.origHandleShareFiles) {
 			try {
-				const sr = (globalThis as any).app?.shareReceiver;
+				// eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
+				const sr = (this.app as any).shareReceiver;
 				if (sr) {
 					const proto = Object.getPrototypeOf(sr);
+					// eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
 					proto.handleShareFiles = this.origHandleShareFiles;
 				}
 			} catch {
@@ -91,22 +93,28 @@ export class ImageShareMenuInjector {
 	 * Caches file data when original method is called, then MutationObserver detects dialog and injects button
 	 */
 	private hookShareReceiver(): void {
-		const app = (globalThis as any).app;
-		if (!app?.shareReceiver) {
+		// shareReceiver 是 Obsidian 内部 API，无公开类型定义 / Internal API, no public type
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
+		const sr = (this.app as any).shareReceiver;
+		if (!sr) {
 			console.debug('Share to Save: shareReceiver not found, image share hook skipped');
 			return;
 		}
 
-		const sr = app.shareReceiver;
 		const proto = Object.getPrototypeOf(sr);
+		// eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
 		if (!proto.handleShareFiles) {
 			console.debug('Share to Save: handleShareFiles not found on prototype, image share hook skipped');
 			return;
 		}
 
+		// eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
 		this.origHandleShareFiles = proto.handleShareFiles;
+		// Hook 闭包内 this 指向 shareReceiver 实例，必须用别名引用本类 / this in hook refers to shareReceiver, alias required
+		// eslint-disable-next-line @typescript-eslint/no-this-alias
 		const self = this;
 
+		// eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
 		proto.handleShareFiles = function (files: SharedFile[]) {
 			self.pendingFiles = files;
 			self.injectedMenu = null;
@@ -126,12 +134,12 @@ export class ImageShareMenuInjector {
 		this.observer = new MutationObserver((mutations) => {
 			for (const mutation of mutations) {
 				for (const node of Array.from(mutation.addedNodes)) {
-					if (node instanceof HTMLElement && node.matches('body > .menu')) {
+					if (node.instanceOf(HTMLElement) && node.matches('body > .menu')) {
 						this.onMenuAdded(node);
 					}
 				}
 				for (const node of Array.from(mutation.removedNodes)) {
-					if (node instanceof HTMLElement && node.matches('.menu')) {
+					if (node.instanceOf(HTMLElement) && node.matches('.menu')) {
 						this.onMenuRemoved(node);
 					}
 				}
@@ -252,9 +260,9 @@ export class ImageShareMenuInjector {
 
 		// 确保 output 目录存在 / Ensure output directory exists
 		try {
-			const dirExists = await this.vault.adapter.exists(outputFolder);
+			const dirExists = await this.app.vault.adapter.exists(outputFolder);
 			if (!dirExists) {
-				await this.vault.adapter.mkdir(outputFolder);
+				await this.app.vault.adapter.mkdir(outputFolder);
 			}
 		} catch {
 			showNotice(this.t('notice.imageFailed'), 5000);
@@ -270,20 +278,25 @@ export class ImageShareMenuInjector {
 				const filename = extractName(file);
 				const uniquePath = await this.resolveUniquePath(`${outputFolder}/${filename}`);
 
-				// 通过 Capacitor 转换文件 URI 为可 fetch 的 URL
-				// Convert file URI to fetchable URL via Capacitor
+				// Capacitor 是手机端运行时全局，用于桥接本地文件，无 TS 类型定义
+				// Capacitor is a mobile runtime global for local file bridging, no TS type definitions
+				// eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
 				const capacitor = (globalThis as any).Capacitor;
+				// eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
 				const fileUrl = capacitor?.convertFileSrc
 					? capacitor.convertFileSrc(file.uri)
 					: file.uri;
 
+				// 此处 fetch 访问的是 Capacitor 桥接的本地文件（content:// → localhost），非 HTTP 请求，不能用 requestUrl
+				// This fetch accesses Capacitor-bridged local files (content:// → localhost), not an HTTP request — requestUrl won't work
+				// eslint-disable-next-line no-restricted-globals
 				const response = await fetch(fileUrl);
 				if (!response.ok) {
 					throw new Error(`HTTP ${response.status}`);
 				}
 				const buffer = await response.arrayBuffer();
 
-				await this.vault.createBinary(uniquePath, buffer);
+				await this.app.vault.createBinary(uniquePath, buffer);
 				okCount++;
 				savedNames.push(filename);
 			} catch (err) {
@@ -311,7 +324,7 @@ export class ImageShareMenuInjector {
 	 * Resolve a non-conflicting file path (append _1, _2 suffix if exists)
 	 */
 	private async resolveUniquePath(targetPath: string): Promise<string> {
-		const exists = await this.vault.adapter.exists(targetPath);
+		const exists = await this.app.vault.adapter.exists(targetPath);
 		if (!exists) return targetPath;
 
 		// 分离文件名和扩展名 / Split filename and extension
@@ -324,7 +337,7 @@ export class ImageShareMenuInjector {
 		do {
 			candidate = `${base}_${counter}${ext}`;
 			counter++;
-		} while (await this.vault.adapter.exists(candidate));
+		} while (await this.app.vault.adapter.exists(candidate));
 
 		return candidate;
 	}
