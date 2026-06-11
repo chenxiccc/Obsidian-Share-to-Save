@@ -714,6 +714,13 @@ class ZhihuConverter implements ContentConverter {
 			if (parsed) metadataPatch.published = parsed;
 		}
 
+		// 回退：部分回答页无 .ContentItem-time，时间在 js-initialData SSR JSON 中
+		// Fallback: some answer pages lack .ContentItem-time, time is in js-initialData SSR JSON
+		if (!metadataPatch.published) {
+			const fallback = ZhihuConverter.extractInitialDataTime(doc, url);
+			if (fallback) metadataPatch.published = fallback;
+		}
+
 		if (/zhuanlan\.zhihu\.com/.test(url)) {
 			this.preprocessZhuanlan(doc);
 		} else {
@@ -839,6 +846,40 @@ class ZhihuConverter implements ContentConverter {
 		// Validate with +08:00 to ensure legal date (Zhihu is China-based)
 		const dt = new Date(result + '+08:00');
 		return isNaN(dt.getTime()) ? null : result;
+	}
+
+	/**
+	 * 从 js-initialData SSR JSON 提取回答的 createdTime（回退方案）
+	 * Extract answer createdTime from js-initialData SSR JSON (fallback)
+	 *
+	 * 部分知乎回答页（如 /answer/1993832134847259674）DOM 中无 .ContentItem-time，
+	 * 发布时间藏在 <script id="js-initialData"> 的 SSR JSON 中：
+	 * entities.answers["<id>"].createdTime = Unix 秒时间戳
+	 */
+	private static extractInitialDataTime(doc: Document, url: string): string | null {
+		// 从 URL 提取回答 ID / Extract answer ID from URL
+		const idMatch = url.match(/\/answer\/(\d+)/);
+		if (!idMatch?.[1]) return null;
+		const answerId = idMatch[1];
+
+		const scriptEl = doc.getElementById('js-initialData');
+		if (!scriptEl?.textContent) return null;
+
+		try {
+			const data = JSON.parse(scriptEl.textContent);
+			const answers = data?.initialState?.entities?.answers;
+			const answer = answers?.[answerId];
+			if (answer?.createdTime && typeof answer.createdTime === 'number') {
+				// createdTime 是 Unix 秒时间戳 → 北京时间 → YYYY-MM-DDTHH:mm:ss
+				// createdTime is Unix seconds timestamp → Beijing time → YYYY-MM-DDTHH:mm:ss
+				const beijing = new Date(answer.createdTime * 1000 + 8 * 60 * 60 * 1000);
+				if (!isNaN(beijing.getTime())) {
+					return beijing.toISOString().slice(0, 19);
+				}
+			}
+		} catch { /* JSON 解析失败 / JSON parse failed */ }
+
+		return null;
 	}
 
 	// ─── 问答预处理 / Answer Preprocessing ──────────────────────────────────
