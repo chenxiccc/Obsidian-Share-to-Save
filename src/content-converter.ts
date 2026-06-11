@@ -706,25 +706,17 @@ class ZhihuConverter implements ContentConverter {
 
 		const metadataPatch: Partial<Metadata> = {};
 
-		// 在预处理前提取 .ContentItem-time（预处理会将其从原位移动或删除）
-		// Extract .ContentItem-time before preprocessing moves or removes it
-		const timeEl = doc.querySelector('.ContentItem-time');
-		if (timeEl?.textContent?.trim()) {
-			const parsed = ZhihuConverter.parseContentItemTime(timeEl.textContent.trim());
-			if (parsed) metadataPatch.published = parsed;
-		}
-
-		// 回退：部分回答页无 .ContentItem-time，时间在 js-initialData SSR JSON 中
-		// Fallback: some answer pages lack .ContentItem-time, time is in js-initialData SSR JSON
-		if (!metadataPatch.published) {
-			const fallback = ZhihuConverter.extractInitialDataTime(doc, url);
-			if (fallback) metadataPatch.published = fallback;
+		// 从 js-initialData SSR JSON 提取时间（专栏+回答统一入口）
+		// Extract time from js-initialData SSR JSON (unified for zhuanlan & answer)
+		const timeInfo = ZhihuConverter.extractTimeFromInitialData(doc, url);
+		if (timeInfo) {
+			metadataPatch.published = timeInfo.published;
 		}
 
 		if (/zhuanlan\.zhihu\.com/.test(url)) {
 			this.preprocessZhuanlan(doc);
 		} else {
-			this.preprocessAnswer(doc);
+			this.preprocessAnswer(doc, timeInfo?.bodyText);
 		}
 
 		const result = new Defuddle(doc, { url, markdown: true, useAsync: false }).parse();
@@ -829,57 +821,64 @@ class ZhihuConverter implements ContentConverter {
 	}
 
 	/**
-	 * 解析知乎 .ContentItem-time 文本 → YYYY-MM-DDTHH:mm:ss（北京时间），专栏和问答共用
-	 * Parse Zhihu .ContentItem-time text → YYYY-MM-DDTHH:mm:ss (Beijing time),
-	 * shared by zhuanlan and answer pages.
+	 * 从 js-initialData SSR JSON 提取时间信息（专栏和回答统一入口）
+	 * Extract time info from js-initialData SSR JSON (unified entry for zhuanlan & answer)
 	 *
-	 * 支持 / Supports:
-	 *   "发布于 2024-01-15 10:30"
-	 *   "编辑于 2026-01-15 21:48"
-	 *   "编辑于 2026-01-15 21:48・北京"
+	 * 返回 / Returns { published, bodyText } | null:
+	 *   published  — updatedTime → 北京时间 YYYY-MM-DDTHH:mm:ss / Beijing time ISO
+	 *   bodyText   — "发布于 {created}・{ipInfo}" [+ "编辑于 {updated}・{ipInfo}"]
 	 */
-	private static parseContentItemTime(text: string): string | null {
-		const match = text.match(/(\d{4}-\d{2}-\d{2})\s*(\d{2}:\d{2})?/);
-		if (!match) return null;
-		const result = `${match[1]}T${match[2] ?? '00:00'}:00`;
-		// 用 +08:00 解析验证，确保日期合法（知乎为中国平台）
-		// Validate with +08:00 to ensure legal date (Zhihu is China-based)
-		const dt = new Date(result + '+08:00');
-		return isNaN(dt.getTime()) ? null : result;
-	}
-
-	/**
-	 * 从 js-initialData SSR JSON 提取回答的 createdTime（回退方案）
-	 * Extract answer createdTime from js-initialData SSR JSON (fallback)
-	 *
-	 * 部分知乎回答页（如 /answer/1993832134847259674）DOM 中无 .ContentItem-time，
-	 * 发布时间藏在 <script id="js-initialData"> 的 SSR JSON 中：
-	 * entities.answers["<id>"].createdTime = Unix 秒时间戳
-	 */
-	private static extractInitialDataTime(doc: Document, url: string): string | null {
-		// 从 URL 提取回答 ID / Extract answer ID from URL
-		const idMatch = url.match(/\/answer\/(\d+)/);
-		if (!idMatch?.[1]) return null;
-		const answerId = idMatch[1];
-
+	private static extractTimeFromInitialData(doc: Document, url: string): { published: string; bodyText: string } | null {
 		const scriptEl = doc.getElementById('js-initialData');
 		if (!scriptEl?.textContent) return null;
 
 		try {
 			const data = JSON.parse(scriptEl.textContent);
-			const answers = data?.initialState?.entities?.answers;
-			const answer = answers?.[answerId];
-			if (answer?.createdTime && typeof answer.createdTime === 'number') {
-				// createdTime 是 Unix 秒时间戳 → 北京时间 → YYYY-MM-DDTHH:mm:ss
-				// createdTime is Unix seconds timestamp → Beijing time → YYYY-MM-DDTHH:mm:ss
-				const beijing = new Date(answer.createdTime * 1000 + 8 * 60 * 60 * 1000);
-				if (!isNaN(beijing.getTime())) {
-					return beijing.toISOString().slice(0, 19);
+			const entities = data?.initialState?.entities || {};
+
+			// 专栏 / zhuanlan: entities.articles[id]
+			const articleMatch = url.match(/\/p\/(\d+)/);
+			if (articleMatch?.[1]) {
+				const article = entities.articles?.[articleMatch[1]];
+				if (article?.created && article?.updated) {
+					return ZhihuConverter.buildTimeResult(article.created, article.updated, article.ipInfo || '');
 				}
 			}
-		} catch { /* JSON 解析失败 / JSON parse failed */ }
+
+			// 回答 / answer: entities.answers[id]
+			const answerMatch = url.match(/\/answer\/(\d+)/);
+			if (answerMatch?.[1]) {
+				const answer = entities.answers?.[answerMatch[1]];
+				if (answer?.createdTime && answer?.updatedTime) {
+					return ZhihuConverter.buildTimeResult(answer.createdTime, answer.updatedTime, answer.ipInfo || '');
+				}
+			}
+		} catch { /* JSON parse failed */ }
 
 		return null;
+	}
+
+	/**
+	 * Unix 秒时间戳 → { published, bodyText }
+	 * Unix seconds timestamps → { published, bodyText }
+	 */
+	private static buildTimeResult(created: number, updated: number, ipInfo: string): { published: string; bodyText: string } {
+		// 时间戳 +8h → UTC 方法输出 = 北京时间 / Timestamp +8h → UTC methods output = Beijing time
+		const fmtTs = (ts: number) => new Date(ts * 1000 + 8 * 60 * 60 * 1000).toISOString().slice(0, 19);
+		const fmtDisplay = (ts: number) => {
+			const d = new Date(ts * 1000 + 8 * 60 * 60 * 1000);
+			// 用 getUTC* 系列方法，因为 +8h 已做偏移，UTC 方法输出即为北京时间
+			// Use getUTC* methods — +8h offset already applied, UTC output = Beijing time
+			return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')} ${String(d.getUTCHours()).padStart(2,'0')}:${String(d.getUTCMinutes()).padStart(2,'0')}`;
+		};
+
+		const published = fmtTs(updated);
+		let bodyText = `发布于 ${fmtDisplay(created)}・${ipInfo}`;
+		if (created !== updated) {
+			bodyText += `\n编辑于 ${fmtDisplay(updated)}・${ipInfo}`;
+		}
+
+		return { published, bodyText };
 	}
 
 	// ─── 问答预处理 / Answer Preprocessing ──────────────────────────────────
@@ -895,23 +894,16 @@ class ZhihuConverter implements ContentConverter {
 	 * + lazy image fix. The method is intentionally a dispatch layer — future
 	 * answer-specific fixes append here, each as a focused private method.
 	 */
-	private preprocessAnswer(doc: Document): void {
+	private preprocessAnswer(doc: Document, bodyText?: string): void {
 		// 将 body 内容替换为仅回答内容，避免知乎 UI 干扰 Defuddle 提取
 		// Replace body content with answer-only content to avoid Zhihu UI confusing Defuddle
 		const answerContent = findAnswerContent(doc);
 		if (answerContent) {
-			// 保存编辑时间：ContentItem-time 是 answerContent 的兄弟，会被 scoping 丢弃
-			// Defuddle 剥离尾部小文本，故必须在 scoping 前追加入 answerContent 内部
-			// Preserve edit time: ContentItem-time is a sibling that scoping discards.
-			// Defuddle strips trailing small text, so append inside answerContent before scoping.
-			const timeEl = doc.querySelector('.ContentItem-time');
-			if (timeEl && timeEl.textContent?.trim()) {
-				// 使用 <span> 而非 <p>：answerContent 可能是 span.RichText，
-				// <p>（块级）在 <span>（内联）内违反 HTML 内容模型
-				// Use <span> not <p>: answerContent may be span.RichText,
-				// <p> (block) inside <span> (inline) violates HTML content model
+			// 从 js-initialData 拼接正文时间行（"发布于 · 浙江" [+ "编辑于 · 广西"]）
+			// Append body time text from js-initialData ("发布于 · Zhejiang" [+ "编辑于 · Guangxi"])
+			if (bodyText) {
 				const timeSpan = doc.createElement('span');
-				timeSpan.textContent = timeEl.textContent.trim();
+				timeSpan.textContent = bodyText;
 				answerContent.appendChild(timeSpan);
 			}
 
