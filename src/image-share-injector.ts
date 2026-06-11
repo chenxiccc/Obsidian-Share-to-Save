@@ -125,7 +125,7 @@ export class ImageShareMenuInjector {
 
 		const descriptor = Object.getOwnPropertyDescriptor(proto, 'handleShareFiles');
 		if (!descriptor?.value) return;
-		this.origHandleShareFiles = descriptor.value;
+		this.origHandleShareFiles = descriptor.value as ShareReceiverProto['handleShareFiles'];
 
 		proto.handleShareFiles = ((ctx) => {
 			return function (this: ShareReceiverInstance, files: SharedFile[]) {
