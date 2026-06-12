@@ -160,8 +160,8 @@ export default class ShareToSavePlugin extends Plugin {
 	}
 
 	/**
-	 * 保存文字到 Share-to-Save.md（非 URL，不进入下载队列）
-	 * Save text to Share-to-Save.md (non-URL, bypasses download queue)
+	 * 保存文字到 Sts-memos.md（非 URL，不进入下载队列）
+	 * Save text to Sts-memos.md (non-URL, bypasses download queue)
 	 */
 	private async handleTextSave(text: string, addTimestamp: boolean): Promise<void> {
 		try {

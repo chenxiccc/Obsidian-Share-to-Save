@@ -1,6 +1,6 @@
 /**
- * 文字保存器：将用户输入的文字直接保存到 Share-to-Save.md
- * Text saver: save user-entered text directly to Share-to-Save.md
+ * 文字保存器：将用户输入的文字直接保存到 Sts-memos.md
+ * Text saver: save user-entered text directly to Sts-memos.md
  *
  * 与 URL 管线完全独立，不依赖 QueueManager / FileWatcher / Downloader
  * Completely independent from the URL pipeline
@@ -10,7 +10,7 @@ import { Vault, TFile, normalizePath } from 'obsidian';
 import type { ShareToSaveSettings } from './types';
 
 /** 固定输出文件名 / Fixed output filename */
-const NOTE_NAME = 'Share-to-Save.md';
+const NOTE_NAME = 'Sts-memos.md';
 
 export class TextSaver {
 	constructor(
@@ -19,8 +19,8 @@ export class TextSaver {
 	) {}
 
 	/**
-	 * 保存文字到 Share-to-Save.md（prepend 到 frontmatter 之下、已有内容之上）
-	 * Save text to Share-to-Save.md (prepend below frontmatter, above existing content)
+	 * 保存文字到 Sts-memos.md（prepend 到 frontmatter 之下、已有内容之上）
+	 * Save text to Sts-memos.md (prepend below frontmatter, above existing content)
 	 *
 	 * 新建文件用 vault.create() — 触发 'create' 事件，注册到元数据缓存
 	 * New file: vault.create() — triggers 'create' event, registers with metadata cache
