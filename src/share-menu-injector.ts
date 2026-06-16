@@ -103,31 +103,16 @@ export class ShareMenuInjector {
 		// 在最后一个 options 项之后插入 / Insert after the last options item
 		const lastOptionItem = optionItems[optionItems.length - 1] as HTMLElement;
 
-		// ── 创建保存文字按钮（始终显示）/ Create Save Text button (always shown) ──
-		const textBtn = activeDocument.createElement('div');
-		textBtn.className = `menu-item tappable ${TEXT_BUTTON_CLASS}`;
-		textBtn.setAttribute('data-section', 'options');
+		let previousElement: HTMLElement = lastOptionItem;
 
-		const textIconEl = textBtn.createEl('div', { cls: 'menu-item-icon' });
-		setIcon(textIconEl, 'cloud-download');
-
-		const textTitleEl = textBtn.createEl('div', { cls: 'menu-item-title' });
-		textTitleEl.setText(this.t('menu.saveText'));
-
-		textBtn.addEventListener('click', () => {
-			void this.handleTextClick(menu, sharedText);
-		});
-
-		lastOptionItem.after(textBtn);
-
-		// ── 仅当有 URL 时创建保存网页按钮 / Create Save Webpage button only when URL present ──
+		// ── 仅当有 URL 时创建保存网页按钮（在上）/ Create Save Webpage button only when URL present (top) ──
 		if (hasUrl) {
 			const urlBtn = activeDocument.createElement('div');
 			urlBtn.className = `menu-item tappable ${URL_BUTTON_CLASS}`;
 			urlBtn.setAttribute('data-section', 'options');
 
 			const urlIconEl = urlBtn.createEl('div', { cls: 'menu-item-icon' });
-			setIcon(urlIconEl, 'cloud-download');
+			setIcon(urlIconEl, 'link');
 
 			const urlTitleEl = urlBtn.createEl('div', { cls: 'menu-item-title' });
 			urlTitleEl.setText(this.t('menu.saveWebpage'));
@@ -136,8 +121,26 @@ export class ShareMenuInjector {
 				void this.handleUrlClick(menu, sharedText);
 			});
 
-			textBtn.after(urlBtn);
+			previousElement.after(urlBtn);
+			previousElement = urlBtn;
 		}
+
+		// ── 创建保存文字按钮（始终显示，在下）/ Create Save Text button (always shown, bottom) ──
+		const textBtn = activeDocument.createElement('div');
+		textBtn.className = `menu-item tappable ${TEXT_BUTTON_CLASS}`;
+		textBtn.setAttribute('data-section', 'options');
+
+		const textIconEl = textBtn.createEl('div', { cls: 'menu-item-icon' });
+		setIcon(textIconEl, 'file-type');
+
+		const textTitleEl = textBtn.createEl('div', { cls: 'menu-item-title' });
+		textTitleEl.setText(this.t('menu.saveText'));
+
+		textBtn.addEventListener('click', () => {
+			void this.handleTextClick(menu, sharedText);
+		});
+
+		previousElement.after(textBtn);
 	}
 
 	/**

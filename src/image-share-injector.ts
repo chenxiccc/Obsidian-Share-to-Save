@@ -208,7 +208,7 @@ export class ImageShareMenuInjector {
 		saveBtn.className = `menu-item tappable ${IMAGE_BUTTON_CLASS}`;
 
 		const iconEl = saveBtn.createEl('div', { cls: 'menu-item-icon' });
-		setIcon(iconEl, 'cloud-download');
+		setIcon(iconEl, 'image-plus');
 
 		const titleEl = saveBtn.createEl('div', { cls: 'menu-item-title' });
 		titleEl.setText(this.t('menu.saveImage'));
