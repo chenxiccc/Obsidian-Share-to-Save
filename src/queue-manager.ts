@@ -66,9 +66,12 @@ export class QueueManager {
 	 * 确保输出目录存在 / Ensure output directory exists
 	 */
 	private async ensureDir(): Promise<void> {
-		const exists = await this.vault.adapter.exists(this.getOutputFolder());
+		// 顶部缓存一次，避免 exists 与 mkdir 两次 getter 读取间设置变更导致错位
+		// Cache once up front so exists/mkdir see the same folder even if settings change mid-call
+		const folder = this.getOutputFolder();
+		const exists = await this.vault.adapter.exists(folder);
 		if (!exists) {
-			await this.vault.adapter.mkdir(this.getOutputFolder());
+			await this.vault.adapter.mkdir(folder);
 		}
 	}
 
@@ -177,7 +180,11 @@ export class QueueManager {
 	async appendEntry(entry: QueueEntry): Promise<void> {
 		await this.ensureDir();
 		const fileName = this.buildFileName(entry);
-		const filePath = `${this.getOutputFolder()}/${fileName}`;
+		// 与 ensureDir 读取同一时刻的目录：顶部缓存一次，避免拼路径时读到变更后的设置
+		// Read the folder at the same instant as ensureDir: cache once so path building
+		// doesn't see a settings change that happened between ensureDir and here
+		const outputFolder = this.getOutputFolder();
+		const filePath = `${outputFolder}/${fileName}`;
 		const json = JSON.stringify(entry);
 		await this.vault.create(filePath, json);
 	}
