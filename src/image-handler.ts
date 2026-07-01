@@ -159,13 +159,22 @@ function buildStableFilename(
 
 
 export class ImageHandler {
-	private readonly attachmentsDir: string;
-
 	constructor(
 		private vault: Vault,
-		outputFolder: string,
-	) {
-		this.attachmentsDir = normalizePath(`${outputFolder}/attachments`);
+		/**
+		 * 输出目录 getter：实时读取当前设置值，避免设置变更后附件仍写入旧目录
+		 * Output folder getter: reads the current setting live, so changing it
+		 * mid-session doesn't leave attachments writing to the stale folder
+		 */
+		private readonly getOutputFolder: () => string,
+	) {}
+
+	/**
+	 * 计算附件目录路径（基于当前 outputFolder 实时读取）
+	 * Compute the attachments directory path (reads current outputFolder live)
+	 */
+	private getAttachmentsDir(): string {
+		return normalizePath(`${this.getOutputFolder()}/attachments`);
 	}
 
 	/**
@@ -297,6 +306,10 @@ export class ImageHandler {
 
 		// Phase 2: 顺序应用（去重 + 保存 + 替换，必须顺序执行保证 dedup 和 markdown 替换正确）
 		// Phase 2: sequential apply (dedup + save + replace, must be sequential for correct dedup and string replacement)
+		// 整批图片复用同一附件目录：循环外缓存一次，避免中途设置变更导致同篇笔记图片散落到不同目录
+		// Reuse one attachments dir for the whole batch: cache once outside the loop so a
+		// mid-batch settings change doesn't scatter one note's images across different folders
+		const attachmentsDir = this.getAttachmentsDir();
 		for (const result of downloadResults) {
 			if (!result.buffer) continue;
 			const { full, url, buffer, contentType } = result;
@@ -308,7 +321,7 @@ export class ImageHandler {
 				contentType,
 			});
 
-			const localPath = `${this.attachmentsDir}/${filename}`;
+			const localPath = `${attachmentsDir}/${filename}`;
 
 			// 内容哈希去重：同一次批处理中相同内容复用第一个 wikilink
 			// Content hash dedup: same content within a batch reuses first wikilink
@@ -355,9 +368,12 @@ export class ImageHandler {
 	 * 确保附件目录存在 / Ensure attachments directory exists
 	 */
 	private async ensureAttachmentsDir(): Promise<void> {
-		const exists = await this.vault.adapter.exists(this.attachmentsDir);
+		// 顶部缓存一次，避免 exists 与 createFolder 两次 getter 读取间设置变更导致错位
+		// Cache once up front so exists/createFolder see the same folder even if settings change mid-call
+		const dir = this.getAttachmentsDir();
+		const exists = await this.vault.adapter.exists(dir);
 		if (!exists) {
-			await this.vault.createFolder(this.attachmentsDir);
+			await this.vault.createFolder(dir);
 		}
 	}
 

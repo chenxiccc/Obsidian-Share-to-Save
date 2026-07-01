@@ -106,7 +106,7 @@ export class Downloader {
 		private settings: ShareToSaveSettings,
 		private t: Translator,
 	) {
-		this.imageHandler = new ImageHandler(vault, settings.outputFolder);
+		this.imageHandler = new ImageHandler(vault, () => settings.outputFolder);
 		this.headlessExtractor = new HeadlessExtractor();
 		this.siteHandlers = [
 			createWechatHandler(this.headlessExtractor),
