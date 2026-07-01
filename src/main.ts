@@ -47,7 +47,7 @@ export default class ShareToSavePlugin extends Plugin {
 		// ── 初始化队列管理器 / Initialize queue manager ──
 		this.queueManager = new QueueManager(
 			this.app.vault,
-			this.settings.outputFolder,
+			() => this.settings.outputFolder,
 			this.app.metadataCache,
 		);
 
