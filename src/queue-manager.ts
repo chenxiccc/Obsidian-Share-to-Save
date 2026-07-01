@@ -24,7 +24,12 @@ const QUEUE_SUFFIX = '.json';
 export class QueueManager {
 	constructor(
 		private vault: Vault,
-		private readonly outputFolder: string,
+		/**
+		 * 输出目录 getter：实时读取当前设置值，避免设置变更后仍写入旧目录
+		 * Output folder getter: reads the current setting live, so changing it
+		 * mid-session doesn't leave the queue writing to the stale folder
+		 */
+		private readonly getOutputFolder: () => string,
 		/**
 		 * 可选：用于内存查 frontmatter.sts_id，跳过已处理的 .md 文件，避免文件 I/O
 		 * Optional: used to check frontmatter.sts_id in memory, skipping processed .md files
@@ -61,9 +66,9 @@ export class QueueManager {
 	 * 确保输出目录存在 / Ensure output directory exists
 	 */
 	private async ensureDir(): Promise<void> {
-		const exists = await this.vault.adapter.exists(this.outputFolder);
+		const exists = await this.vault.adapter.exists(this.getOutputFolder());
 		if (!exists) {
-			await this.vault.adapter.mkdir(this.outputFolder);
+			await this.vault.adapter.mkdir(this.getOutputFolder());
 		}
 	}
 
@@ -75,18 +80,20 @@ export class QueueManager {
 	 * Internally calls convertShareMenuNotes() first to convert share-menu .md to queue entries
 	 */
 	async getPendingEntries(): Promise<QueueEntryWithPath[]> {
+		const outputFolder = this.getOutputFolder();
+
 		// 目录不存在说明无待处理任务，直接返回空数组，避免无谓创建空目录
 		// Directory doesn't exist means no pending tasks, return early to avoid creating empty dir
-		const dirExists = await this.vault.adapter.exists(this.outputFolder);
+		const dirExists = await this.vault.adapter.exists(outputFolder);
 		if (!dirExists) return [];
 
 		// 先列文件用于 md 检测 / List files for md detection
-		const listing = await this.vault.adapter.list(this.outputFolder);
+		const listing = await this.vault.adapter.list(outputFolder);
 		await this.convertShareMenuNotes(listing.files);
 
 		// 重新列出：convertShareMenuNotes 可能创建了新队列文件
 		// Re-list: convertShareMenuNotes may have created new queue files
-		const files = await this.vault.adapter.list(this.outputFolder);
+		const files = await this.vault.adapter.list(outputFolder);
 		const queueFiles = files.files
 			.filter(f => {
 				const name = f.split('/').pop() || '';
@@ -170,7 +177,7 @@ export class QueueManager {
 	async appendEntry(entry: QueueEntry): Promise<void> {
 		await this.ensureDir();
 		const fileName = this.buildFileName(entry);
-		const filePath = `${this.outputFolder}/${fileName}`;
+		const filePath = `${this.getOutputFolder()}/${fileName}`;
 		const json = JSON.stringify(entry);
 		await this.vault.create(filePath, json);
 	}
