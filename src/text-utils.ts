@@ -317,6 +317,24 @@ function normalizeMultilineLinks(md: string): string {
 	);
 }
 
+/**
+ * 规范化断裂的粗体标记：修复 **text\n** → **text**。
+ * Normalize broken bold markers: fix **text\n** → **text**.
+ *
+ * 当 <strong> 元素文本末尾含换行符时，Turndown 会输出 **text\n**，
+ * Obsidian Live Preview 无法识别跨行的粗体分隔符。
+ * When <strong> element text ends with a newline, Turndown outputs **text\n**,
+ * Obsidian Live Preview can't recognize bold delimiters across lines.
+ */
+function normalizeBoldMarkers(md: string): string {
+	// 快速路径：没有 ** 后紧跟换行 + 独立 ** 的模式 → 无需修复
+	// Fast path: no ** followed by newline + standalone ** pattern → skip
+	if (!/\*\*[^*\n]+\n\*\*/g.test(md)) return md;
+
+	return md.replace(/\*\*([^*\n]+)\n\*\*/g, '**$1**');
+}
+
+
 // ─── 管线聚合入口 / Pipeline Aggregation Entry Points ─────────────────────
 
 /**
@@ -366,6 +384,7 @@ export function normalizeDocument(doc: Document): void {
 export function postprocessContent(md: string): string {
 	md = restoreAngleBrackets(md);
 	md = md.replace(/\t/g, ' ');        // Tab → space / Obsidian code-block prevention
+	md = normalizeBoldMarkers(md);       // fix **text\n** → **text** / Obsidian bold delimiter
 	md = normalizeMultilineLinks(md);    // collapse newlines in link text
 	return md;
 }
